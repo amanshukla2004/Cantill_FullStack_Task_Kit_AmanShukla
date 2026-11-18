@@ -1,0 +1,17 @@
+services:
+  corvo-procurement:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: corvo_pr_to_po
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/storage/procurement.db
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+    volumes:
+      - ./storage:/app/storage
+    restart: unless-stopped

@@ -1,0 +1,11 @@
+node_modules
+client/node_modules
+dist
+dist-tests
+client/dist
+storage
+.env
+.git
+SOLUTION FOLDER
+SOLUTION FOLDER 2
+*.log
