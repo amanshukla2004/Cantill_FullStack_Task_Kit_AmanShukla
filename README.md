@@ -2,7 +2,7 @@
 
 A full-stack, policy-driven procurement automation web app built for **Corvo Engineering Pvt Ltd** (`PUN1` Bhosari & `CHK1` Chakan plants). Employees raise purchase requisitions via conversational chat (or batch CSV upload), Procurement updates policy rules without code changes, and a 100% deterministic engine routes requirements to consolidated Purchase Orders or Sourcing Requests.
 
-- **Live Hosted App:** `<ADD_YOUR_RENDER_OR_RAILWAY_URL_HERE>`
+- **Live Hosted App:** [https://cantillfullstacktaskkitamanshukla-production.up.railway.app/](https://cantillfullstacktaskkitamanshukla-production.up.railway.app/)
 - **Business Decisions & Ranking Proof:** [DECISIONS.md](./DECISIONS.md)
 - **Architecture & AI Disclosure:** [APPROACH.md](./APPROACH.md)
 
