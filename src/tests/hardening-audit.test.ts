@@ -237,4 +237,58 @@ describe('Adversarial Hardening Audit: Unseen Items, Future-Dated Macro Windows,
     assert.equal(p2.body.group_id, p1.body.group_id);
     assert.equal(p2.body.decision.route, 'RFQ');
   });
+
+  it('handles greetings ("hi") without creating NEW item, warns on invalid plant "PUN2", and never produces "vv5.1"', async () => {
+    // 1. Greeting must NOT become a NEW item
+    const hi = await invokeExpress(app, {
+      method: 'POST',
+      url: '/api/chat/message',
+      json: { message: 'hi' }
+    });
+    assert.equal(hi.status, 200);
+    assert.equal(hi.body.slots.item_match_status, 'UNSET');
+    assert.equal(hi.body.slots.resolved_item_code, null);
+
+    // 2. Invalid plant PUN2 gives explicit feedback
+    const badPlant = await invokeExpress(app, {
+      method: 'POST',
+      url: '/api/chat/message',
+      json: { message: 'need 200 nitrile gloves for PUN2 by 2026-11-28 normal' }
+    });
+    assert.equal(badPlant.status, 200);
+    assert.equal(badPlant.body.slots.plant, null);
+    assert.ok(badPlant.body.reply.includes('PUN2'));
+
+    // 3. Policy version starting with "v" never outputs "vv5.1"
+    const snap = loadMasterDataSnapshot(db);
+    const vPrefixedPolicy: Policy = {
+      ...snap.policies[0],
+      policy_id: 101,
+      version: 'v5.8',
+      effective_date: '2026-11-01',
+      status: 'ACTIVE'
+    };
+    const res = runProcurementPipeline({
+      ...snap,
+      policies: [vPrefixedPolicy],
+      prLines: [
+        {
+          pr_no: 'PR-V-1',
+          pr_line: 1,
+          created_at: '2026-11-05 10:00',
+          requester: 'A',
+          department: 'Production',
+          plant: 'PUN1',
+          raw_item_code: 'ITM-1002',
+          description: 'MS sheet 3mm 1250x2500',
+          quantity: 10,
+          uom: 'NOS',
+          estimated_unit_price: null,
+          need_by_date: '2026-11-15',
+          urgency: 'Normal'
+        }
+      ]
+    });
+    assert.equal(res.decisions[0].policy_version, 'v5.8');
+  });
 });

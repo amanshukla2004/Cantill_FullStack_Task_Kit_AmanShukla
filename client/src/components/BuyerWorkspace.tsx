@@ -30,6 +30,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [routeFilter, setRouteFilter] = useState<string>('');
+  const [plantFilter, setPlantFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [buyerName, setBuyerName] = useState('Priya Sharma (Buyer)');
   const [loading, setLoading] = useState(false);
@@ -90,6 +91,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
     return requirements.filter((r) => {
       if (statusFilter && r.status !== statusFilter) return false;
       if (routeFilter && r.route !== routeFilter) return false;
+      if (plantFilter && r.plant !== plantFilter) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
         const hay = `${r.group_id} ${r.resolved_item_code} ${r.item_description} ${r.supplier_id} ${r.supplier_name} ${r.plant} ${r.lines.map((l) => l.pr_no).join(' ')}`.toLowerCase();
@@ -97,7 +99,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
       }
       return true;
     });
-  }, [requirements, statusFilter, routeFilter, search]);
+  }, [requirements, statusFilter, routeFilter, plantFilter, search]);
 
   const selected = useMemo(
     () => filtered.find((r) => r.id === selectedId) || filtered[0] || null,
@@ -291,7 +293,17 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <select
+                      className="select"
+                      style={{ width: 120 }}
+                      value={plantFilter}
+                      onChange={(e) => setPlantFilter(e.target.value)}
+                    >
+                      <option value="">All Plants</option>
+                      <option value="PUN1">PUN1 (Bhosari)</option>
+                      <option value="CHK1">CHK1 (Chakan)</option>
+                    </select>
                     <select
                       className="select"
                       style={{ width: 145 }}

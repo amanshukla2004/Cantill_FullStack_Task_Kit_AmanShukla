@@ -22,6 +22,16 @@ const STARTER_PROMPTS = [
   'need 2 industrial laser printers for Bhosari by 2026-12-05, normal'
 ];
 
+function renderFormattedText(text: string): React.ReactNode {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, idx) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={idx}>{part.slice(2, -2)}</strong>;
+    }
+    return <React.Fragment key={idx}>{part}</React.Fragment>;
+  });
+}
+
 export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged }) => {
   const [sessionId, setSessionId] = useState<string | undefined>(undefined);
   const [messages, setMessages] = useState<
@@ -195,7 +205,7 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
           <div className="chat-messages">
             {messages.map((m, idx) => (
               <div key={idx} className={`msg-bubble ${m.role}`}>
-                {m.content}
+                {renderFormattedText(m.content)}
               </div>
             ))}
             {sending && <div className="msg-bubble assistant">Thinking...</div>}

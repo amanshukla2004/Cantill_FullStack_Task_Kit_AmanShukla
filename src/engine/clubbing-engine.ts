@@ -1,6 +1,11 @@
 import { PRLine, Requirement } from './types.js';
 import { calendarDaysDiff, parseUtcTimestampMs } from './date-utils.js';
 
+export type ClubbingWindowResolver = (dateStr: string) => {
+  creationWindowDays: number;
+  needByWindowDays: number;
+};
+
 /**
  * Policy Clause 2: Anti-splitting requirement clubbing.
  * - Sorted strictly by created_at ASC, pr_no ASC, pr_line ASC.
@@ -8,12 +13,14 @@ import { calendarDaysDiff, parseUtcTimestampMs } from './date-utils.js';
  * - Joins earliest open requirement with same item, same plant,
  *   created within creationWindowDays calendar days of first line,
  *   and need-by date within needByWindowDays calendar days (either side) of first line.
+ * - Supports per-line effective-date window resolution when policies change mid-batch.
  * - Emergency on any line elevates the entire requirement (Clause 2.3).
  */
 export function clubPRLines(
   prLines: PRLine[],
   creationWindowDays = 14,
-  needByWindowDays = 7
+  needByWindowDays = 7,
+  windowResolver?: ClubbingWindowResolver
 ): Requirement[] {
   const sortedLines = [...prLines].sort((a, b) => {
     const timeDiff = parseUtcTimestampMs(a.created_at) - parseUtcTimestampMs(b.created_at);
@@ -44,12 +51,20 @@ export function clubPRLines(
       continue;
     }
 
+    const lineDate = line.created_at.slice(0, 10);
+    const activeWindows = windowResolver
+      ? windowResolver(lineDate)
+      : { creationWindowDays, needByWindowDays };
+
     let targetReq: Requirement | null = null;
     for (const req of requirements) {
       if (req.resolved_item_code === resolvedCode && req.plant === line.plant) {
         const createdDelta = calendarDaysDiff(req.first_created_at, line.created_at);
         const needByDelta = calendarDaysDiff(req.first_need_by_date, line.need_by_date);
-        if (createdDelta <= creationWindowDays && needByDelta <= needByWindowDays) {
+        if (
+          createdDelta <= activeWindows.creationWindowDays &&
+          needByDelta <= activeWindows.needByWindowDays
+        ) {
           targetReq = req;
           break; // Clause 2.2: joins earliest qualifying requirement
         }

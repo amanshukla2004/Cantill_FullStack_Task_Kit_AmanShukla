@@ -19,11 +19,6 @@ function executeAndPersistBatch(
   filename: string
 ) {
   const snap = loadMasterDataSnapshot(db);
-  const activePolicies = snap.policies
-    .filter((p) => p.status === 'ACTIVE' || p.status === 'SUPERSEDED')
-    .sort((a, b) => b.effective_date.localeCompare(a.effective_date) || b.policy_id - a.policy_id);
-  const latestVersion = activePolicies[0] ? `v${activePolicies[0].version}` : 'v5.0';
-
   const pipelineResult = runProcurementPipeline({
     prLines,
     plants: snap.plants,
@@ -34,6 +29,11 @@ function executeAndPersistBatch(
     poHistory: snap.poHistory,
     policies: snap.policies
   });
+
+  const appliedVersions = Array.from(
+    new Set(pipelineResult.decisions.map((d) => d.policy_version).filter(Boolean))
+  );
+  const latestVersion = appliedVersions.length > 0 ? appliedVersions.join(', ') : 'v5.0';
 
   const nowIso = new Date().toISOString();
 

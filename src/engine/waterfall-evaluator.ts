@@ -13,6 +13,10 @@ import { EvaluationContext, evaluateCondition } from './policy-ast.js';
 import { extractDateOnly, subtractDays } from './date-utils.js';
 import { getSourcingSuggestions, rankPreferredSuppliers } from './preferred-suppliers.js';
 
+export function formatPolicyVersion(version: string): string {
+  return `v${version.trim().replace(/^v/i, '')}`;
+}
+
 /**
  * Resolve the applicable approved policy version as of a requirement's creation date.
  * Supports mid-batch effective dates cleanly.
@@ -96,6 +100,7 @@ export function evaluateWaterfall(
   const orderedRules = [...policy.rules].sort(
     (a, b) => a.priority_order - b.priority_order
   );
+  const verLabel = formatPolicyVersion(policy.version);
 
   for (const rule of orderedRules) {
     if (!evaluateCondition(rule.conditions, ctx)) continue;
@@ -106,7 +111,7 @@ export function evaluateWaterfall(
       const c = valuation.contract_used;
       return {
         requirement: req,
-        policy_version: `v${policy.version}`,
+        policy_version: verLabel,
         clause_applied: rule.clause_number,
         decision: rule.outcome,
         route: rule.route,
@@ -115,7 +120,7 @@ export function evaluateWaterfall(
         group_value_inr: valuation.group_value_inr,
         suggested_supplier_ids: '',
         reference_doc: c.contract_id,
-        reason: `Policy v${policy.version} Clause ${rule.clause_number} (${rule.rule_name}): Active contract ${c.contract_id} with ${c.supplier_id} (${c.supplier_name}) at ₹${valuation.unit_price.toFixed(2)}; ${valuation.pricing_basis}`
+        reason: `Policy ${verLabel} Clause ${rule.clause_number} (${rule.rule_name}): Active contract ${c.contract_id} with ${c.supplier_id} (${c.supplier_name}) at ₹${valuation.unit_price.toFixed(2)}; ${valuation.pricing_basis}`
       };
     }
 
@@ -126,7 +131,7 @@ export function evaluateWaterfall(
       const topSupplier = preferredList[0];
       return {
         requirement: req,
-        policy_version: `v${policy.version}`,
+        policy_version: verLabel,
         clause_applied: rule.clause_number,
         decision: rule.outcome,
         route: rule.route,
@@ -135,7 +140,7 @@ export function evaluateWaterfall(
         group_value_inr: valuation.group_value_inr,
         suggested_supplier_ids: '',
         reference_doc: topSupplier.reference_source,
-        reason: `Policy v${policy.version} Clause ${rule.clause_number} (${rule.rule_name}): Awarded to 1st preferred supplier ${topSupplier.supplier_id} (${topSupplier.supplier_name}) at ref price ₹${topSupplier.reference_price.toFixed(2)} via ${topSupplier.reference_source}; valued via ${valuation.pricing_basis}`
+        reason: `Policy ${verLabel} Clause ${rule.clause_number} (${rule.rule_name}): Awarded to 1st preferred supplier ${topSupplier.supplier_id} (${topSupplier.supplier_name}) at ref price ₹${topSupplier.reference_price.toFixed(2)} via ${topSupplier.reference_source}; valued via ${valuation.pricing_basis}`
       };
     }
 
@@ -147,7 +152,7 @@ export function evaluateWaterfall(
 
     return {
       requirement: req,
-      policy_version: `v${policy.version}`,
+      policy_version: verLabel,
       clause_applied: rule.clause_number,
       decision: rule.outcome,
       route: rule.route,
@@ -156,7 +161,7 @@ export function evaluateWaterfall(
       group_value_inr: valuation.group_value_inr,
       suggested_supplier_ids: suggested.join(';'),
       reference_doc: valuation.reference_doc,
-      reason: `Policy v${policy.version} Clause ${rule.clause_number} (${rule.rule_name}): Valued at ₹${valuation.group_value_inr.toLocaleString('en-IN')} via ${valuation.pricing_basis}${rule.notes ? `; ${rule.notes}` : ''}`
+      reason: `Policy ${verLabel} Clause ${rule.clause_number} (${rule.rule_name}): Valued at ₹${valuation.group_value_inr.toLocaleString('en-IN')} via ${valuation.pricing_basis}${rule.notes ? `; ${rule.notes}` : ''}`
     };
   }
 
@@ -164,7 +169,7 @@ export function evaluateWaterfall(
   const fallbackSuggestions = getSourcingSuggestions(item, 3, preferredList, supplierMaster);
   return {
     requirement: req,
-    policy_version: `v${policy.version}`,
+    policy_version: verLabel,
     clause_applied: 'FALLBACK',
     decision: 'SOURCING_REQUEST',
     route: 'RFQ',
@@ -173,6 +178,6 @@ export function evaluateWaterfall(
     group_value_inr: valuation.group_value_inr,
     suggested_supplier_ids: fallbackSuggestions.join(';'),
     reference_doc: valuation.reference_doc,
-    reason: `Policy v${policy.version} default sourcing fallback: no rule matched; valued via ${valuation.pricing_basis}`
+    reason: `Policy ${verLabel} default sourcing fallback: no rule matched; valued via ${valuation.pricing_basis}`
   };
 }

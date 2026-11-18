@@ -42,19 +42,22 @@ export function createPolicyRouter(db: DatabaseSync): Router {
    *  - JSON body { instruction: string, actor?: string } describing a change in chat
    * Generates a DRAFT policy version + plain-language diff for human approval.
    */
-  router.post('/policy/amend', upload.single('file'), async (req, res) => {
+  router.post('/policy/amend', upload.any(), async (req, res) => {
     try {
       let amendmentText = '';
       let sourceLabel = 'Chat instruction';
 
-      if (req.file) {
-        sourceLabel = req.file.originalname || 'Uploaded policy document';
+      const files = Array.isArray(req.files) ? (req.files as Express.Multer.File[]) : [];
+      const uploadedFile = files[0];
+
+      if (uploadedFile) {
+        sourceLabel = uploadedFile.originalname || 'Uploaded policy document';
         const isPdf =
-          req.file.mimetype === 'application/pdf' ||
+          uploadedFile.mimetype === 'application/pdf' ||
           sourceLabel.toLowerCase().endsWith('.pdf');
         amendmentText = isPdf
-          ? await extractPdfRawText(req.file.buffer)
-          : req.file.buffer.toString('utf-8');
+          ? await extractPdfRawText(uploadedFile.buffer)
+          : uploadedFile.buffer.toString('utf-8');
       } else if (req.body && typeof req.body.instruction === 'string') {
         amendmentText = req.body.instruction.trim();
       } else if (req.body && typeof req.body.text === 'string') {
@@ -94,6 +97,7 @@ export function createPolicyRouter(db: DatabaseSync): Router {
           ? req.body.actor.trim()
           : 'Procurement Admin';
 
+      const cleanVersion = draft.new_version.trim().replace(/^v/i, '');
       const insertPol = db
         .prepare(
           `INSERT INTO policies
@@ -105,7 +109,7 @@ export function createPolicyRouter(db: DatabaseSync): Router {
         )
         .run(
           currentPolicy.document_code,
-          draft.new_version,
+          cleanVersion,
           draft.title,
           draft.effective_date,
           nowIso,
@@ -233,7 +237,7 @@ export function createPolicyRouter(db: DatabaseSync): Router {
            psl_lookback_days = ?, psl_recency_high_days = ?, psl_recency_med_days = ?
        WHERE policy_id = ?`
     ).run(
-      draft.new_version,
+      draft.new_version.trim().replace(/^v/i, ''),
       draft.title,
       draft.effective_date,
       JSON.stringify(diff ? diff.plain_language_summary : draft.plain_language_diff),

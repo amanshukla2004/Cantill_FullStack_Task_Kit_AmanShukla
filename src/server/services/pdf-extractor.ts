@@ -56,9 +56,10 @@ export async function extractPdfRawText(buffer: Buffer): Promise<string> {
 export function parseContractTextDeterministic(rawText: string): ExtractedContractData {
   const normalized = rawText.replace(/\r/g, '\n');
 
-  // Contract No. RC-2026-031
-  const contractIdMatch = normalized.match(/Contract\s+No\.?\s*([A-Z]{2}-\d{4}-\d{3})/i)
-    || normalized.match(/\b(RC-\d{4}-\d{3})\b/i);
+  // Contract No. RC-2026-031 (supports 2-6 digit/alphanumeric suffix e.g. RC-2026-1001)
+  const contractIdMatch =
+    normalized.match(/Contract\s+No\.?\s*([A-Z]{2}-\d{4}-[A-Z0-9]{2,6})/i) ||
+    normalized.match(/\b(RC-\d{4}-[A-Z0-9]{2,6})\b/i);
   const contract_id = contractIdMatch ? contractIdMatch[1].toUpperCase() : '';
 
   // Supplier name & Supplier ID: "... and Pneumatic Point, Pune (Supplier ID S021)"

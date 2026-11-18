@@ -14,7 +14,7 @@ import { extractDateOnly } from './date-utils.js';
 import { filterAnomaliesAndResolveItems } from './anomaly-guard.js';
 import { clubPRLines } from './clubbing-engine.js';
 import { valueRequirement } from './contract-ceiling.js';
-import { evaluateWaterfall, resolvePolicyForDate } from './waterfall-evaluator.js';
+import { evaluateWaterfall, formatPolicyVersion, resolvePolicyForDate } from './waterfall-evaluator.js';
 import { ConsolidatedPOGroup, consolidatePurchaseOrders } from './po-consolidator.js';
 
 export interface PipelineInput {
@@ -63,14 +63,21 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
     prLines,
     plants,
     items,
-    `v${primaryPolicy.version}`
+    formatPolicyVersion(primaryPolicy.version)
   );
 
-  // Step 2: Anti-splitting clubbing (Clause 2)
+  // Step 2: Anti-splitting clubbing (Clause 2) with per-line effective-date window resolution
   const requirements = clubPRLines(
     validLines,
     primaryPolicy.clubbing_creation_window_days,
-    primaryPolicy.clubbing_need_by_window_days
+    primaryPolicy.clubbing_need_by_window_days,
+    (dateStr) => {
+      const p = resolvePolicyForDate(policies, dateStr);
+      return {
+        creationWindowDays: p.clubbing_creation_window_days,
+        needByWindowDays: p.clubbing_need_by_window_days
+      };
+    }
   );
 
   // Step 3: Deep-clone contracts starting cleanly from baseline initial_consumed_value (idempotent Run 1 -> Run 2)
@@ -89,9 +96,10 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
     if (req.resolved_item_code === 'NEW') {
       const unitEst = req.lines[0].estimated_unit_price ?? 0;
       const groupVal = Math.round(req.total_quantity * unitEst);
+      const verLabel = formatPolicyVersion(reqPolicy.version);
       evaluatedReqs.push({
         requirement: req,
-        policy_version: `v${reqPolicy.version}`,
+        policy_version: verLabel,
         clause_applied: '1.2',
         decision: 'SOURCING_REQUEST',
         route: 'NEW_ITEM_SOURCING',
@@ -100,7 +108,7 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
         group_value_inr: groupVal,
         suggested_supplier_ids: '',
         reference_doc: 'Requester Estimate',
-        reason: `Policy v${reqPolicy.version} Clause 1.2 (New Item): Uncataloged item '${req.lines[0].description}'; valued at requester estimate ₹${unitEst.toFixed(2)}, never clubbed, no supplier suggestions`
+        reason: `Policy ${verLabel} Clause 1.2 (New Item): Uncataloged item '${req.lines[0].description}'; valued at requester estimate ₹${unitEst.toFixed(2)}, never clubbed, no supplier suggestions`
       });
       continue;
     }

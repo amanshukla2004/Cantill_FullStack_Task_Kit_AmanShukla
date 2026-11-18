@@ -76,16 +76,18 @@ export function createContractsRouter(db: DatabaseSync): Router {
    * POST /api/contracts/upload-pdf
    * Extracts contract metadata + Schedule A lines from an uploaded PDF for buyer verification.
    */
-  router.post('/contracts/upload-pdf', upload.single('file'), async (req, res) => {
+  router.post('/contracts/upload-pdf', upload.any(), async (req, res) => {
     try {
-      if (!req.file) {
-        res.status(400).json({ error: 'Please upload a PDF file under form field "file".' });
+      const files = Array.isArray(req.files) ? (req.files as Express.Multer.File[]) : [];
+      const uploadedFile = files[0];
+      if (!uploadedFile) {
+        res.status(400).json({ error: 'Please upload a PDF file.' });
         return;
       }
 
-      const extracted = await extractContractFromPdfBuffer(req.file.buffer);
+      const extracted = await extractContractFromPdfBuffer(uploadedFile.buffer);
       res.json({
-        filename: req.file.originalname,
+        filename: uploadedFile.originalname,
         extracted: {
           contract_id: extracted.contract_id,
           supplier_id: extracted.supplier_id,

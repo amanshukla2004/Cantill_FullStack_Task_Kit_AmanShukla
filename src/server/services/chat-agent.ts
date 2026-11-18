@@ -156,15 +156,23 @@ function normalizePlant(raw: string | null | undefined, plants: Map<string, Plan
 /**
  * Deterministic regex/heuristic slot extractor (used when GROQ_API_KEY is absent or as safety net).
  */
+const GREETING_OR_CHITCHAT =
+  /^(hi|hello|hey|hii+|good\s*(morning|afternoon|evening)|help|start|menu|thanks?|thank\s+you|ok|okay|sure|namaste|how\s+are\s+you|what\s+can\s+you\s+do)[!?.]*$/i;
+
 function extractSlotsDeterministic(
   message: string,
   currentSlots: ChatSlots,
   plants: Map<string, Plant>,
   referenceDateIso: string
-): z.infer<typeof GroqSlotExtractionSchema> {
-  const out: z.infer<typeof GroqSlotExtractionSchema> = {};
+): z.infer<typeof GroqSlotExtractionSchema> & { validation_note?: string } {
+  const out: z.infer<typeof GroqSlotExtractionSchema> & { validation_note?: string } = {};
   const trimmed = message.trim();
   const lower = trimmed.toLowerCase();
+
+  // Never treat greetings or help messages as a purchase item
+  if (GREETING_OR_CHITCHAT.test(trimmed)) {
+    return out;
+  }
 
   // Explicit item code like ITM-1048
   const codeMatch = trimmed.match(/\b(ITM-\d{4})\b/i);
@@ -177,9 +185,23 @@ function extractSlotsDeterministic(
     out.confirm_new_item = true;
   }
 
-  // Plant detection
-  if (/\b(chk1|chakan)\b/i.test(lower)) out.plant = 'CHK1';
-  else if (/\b(pun1|bhosari)\b/i.test(lower)) out.plant = 'PUN1';
+  // Plant detection (including explicit feedback for invalid plant codes like PUN2)
+  if (/\b(chk1|chakan)\b/i.test(lower)) {
+    out.plant = 'CHK1';
+  } else if (/\b(pun1|bhosari)\b/i.test(lower)) {
+    out.plant = 'PUN1';
+  } else {
+    const unknownPlant = trimmed.match(/\b((?:PUN|CHK|MUM|BLR|DEL)\d+)\b/i);
+    if (unknownPlant && !plants.has(unknownPlant[1].toUpperCase())) {
+      out.validation_note = `Note: "${unknownPlant[1].toUpperCase()}" is not a valid Corvo plant. Please choose PUN1 (Bhosari) or CHK1 (Chakan).`;
+    }
+  }
+
+  // Detect invalid non-positive quantities explicitly
+  const nonPosQty = trimmed.match(/\b(?:need|want|order|qty|quantity)\s+(-?\d+)\b/i);
+  if (nonPosQty && Number(nonPosQty[1]) <= 0) {
+    out.validation_note = `Note: Quantity must be greater than 0 (received ${nonPosQty[1]}).`;
+  }
 
   // Urgency detection
   if (/\b(emergency|urgent|breakdown|critical)\b/i.test(lower)) {
@@ -507,7 +529,8 @@ export async function processChatMessage(opts: {
   let extracted: z.infer<typeof GroqSlotExtractionSchema> | null = null;
 
   // Step 1: Try Groq structured slot extraction (NEVER lets LLM invent catalog codes!)
-  if (groqClient.isConfigured()) {
+  const isGreeting = GREETING_OR_CHITCHAT.test(opts.userMessage.trim());
+  if (!isGreeting && groqClient.isConfigured()) {
     const systemPrompt = `You are a procurement intake slot extractor for Corvo Engineering (plants: PUN1 = Bhosari, CHK1 = Chakan).
 Today's reference date is ${refDate}.
 Extract ONLY facts explicitly stated or clearly updated in the user's latest message (given conversation context).
@@ -602,7 +625,12 @@ Latest user message: "${opts.userMessage}"`;
 
   // Step 5: Compute remaining missing slots & natural reply
   const missing = computeMissingSlots(slots);
-  const { reply, quick_replies } = buildDeterministicReply(slots, missing);
+  const { reply: baseReply, quick_replies } = buildDeterministicReply(slots, missing);
+  const reply = isGreeting && slots.item_match_status === 'UNSET'
+    ? 'Hello! Tell me what item you need to purchase along with quantity, plant (PUN1 Bhosari or CHK1 Chakan), need-by date, and urgency — for example: "need 200 nitrile gloves for Chakan by next Friday".'
+    : det.validation_note
+      ? `${det.validation_note}\n\n${baseReply}`
+      : baseReply;
 
   return {
     session_id: opts.sessionId,
