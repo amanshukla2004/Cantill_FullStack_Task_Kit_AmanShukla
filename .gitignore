@@ -1,0 +1,32 @@
+# Private planning & reference folders (excluded from submission repo)
+SOLUTION FOLDER/
+SOLUTION FOLDER 2/
+
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Build outputs
+dist/
+dist-tests/
+client/dist/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# Runtime SQLite database files
+storage/
+*.db
+*.db-wal
+*.db-shm
+
+# Logs & OS files
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+coverage/
