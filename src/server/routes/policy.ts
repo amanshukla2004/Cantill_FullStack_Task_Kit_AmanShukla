@@ -3,6 +3,7 @@ import multer from 'multer';
 import { z } from 'zod';
 import { DatabaseSync } from 'node:sqlite';
 import { loadAllPolicies, loadMasterDataSnapshot } from '../db.js';
+import { formatPolicyVersion } from '../../engine/waterfall-evaluator.js';
 import { extractPdfRawText } from '../services/pdf-extractor.js';
 import {
   PolicyAmendmentDraftSchema,
@@ -301,19 +302,30 @@ export function createPolicyRouter(db: DatabaseSync): Router {
 
     const nowIso = new Date().toISOString();
     const { approved_by } = parsed.data;
+    const currentActive = all.find((p) => p.status === 'ACTIVE');
+    const isRollback = Boolean(currentActive && policyId < currentActive.policy_id);
 
-    db.prepare("UPDATE policies SET status = 'SUPERSEDED' WHERE status = 'ACTIVE' AND policy_id != ?").run(
-      policyId
-    );
+    if (isRollback) {
+      // Permanently mark newer active/superseded policies as ROLLED_BACK so they never resurrect on future upgrades
+      db.prepare(
+        "UPDATE policies SET status = 'ROLLED_BACK' WHERE status IN ('ACTIVE', 'SUPERSEDED') AND policy_id > ?"
+      ).run(policyId);
+    } else {
+      db.prepare(
+        "UPDATE policies SET status = 'SUPERSEDED' WHERE status = 'ACTIVE' AND policy_id != ?"
+      ).run(policyId);
+    }
     db.prepare(
       "UPDATE policies SET status = 'ACTIVE', approved_by = ?, approved_at = ? WHERE policy_id = ?"
     ).run(approved_by, nowIso, policyId);
 
+    const verLabel = formatPolicyVersion(target.version);
     db.prepare(
       `INSERT INTO audit_logs (entity_type, entity_id, action, actor, timestamp, details_json)
-       VALUES ('POLICY', ?, 'ACTIVATED', ?, ?, ?)`
+       VALUES ('POLICY', ?, ?, ?, ?, ?)`
     ).run(
-      `v${target.version}`,
+      verLabel,
+      isRollback ? 'ROLLED_BACK_TO' : 'ACTIVATED',
       approved_by,
       nowIso,
       JSON.stringify({
@@ -325,7 +337,7 @@ export function createPolicyRouter(db: DatabaseSync): Router {
 
     const activated = loadAllPolicies(db).find((p) => p.policy_id === policyId)!;
     res.json({
-      message: `Policy v${activated.version} is now ACTIVE from ${activated.effective_date}.`,
+      message: `Policy ${verLabel} is now ACTIVE from ${activated.effective_date}.`,
       active_policy: activated
     });
   };

@@ -186,7 +186,7 @@ export interface PolicyDto {
   version: string;
   title: string;
   effective_date: string;
-  status: 'DRAFT' | 'ACTIVE' | 'SUPERSEDED';
+  status: 'DRAFT' | 'ACTIVE' | 'SUPERSEDED' | 'ROLLED_BACK';
   created_at: string;
   approved_by: string | null;
   approved_at: string | null;
@@ -223,9 +223,20 @@ export interface ContractDto {
 async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
+  let data: Record<string, unknown> = {};
+  if (text) {
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      if (!res.ok) {
+        throw new Error(`Request failed (${res.status}): ${text.slice(0, 140)}`);
+      }
+      throw new Error(`Invalid JSON response from server (${res.status})`);
+    }
+  }
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const errMsg = typeof data.error === 'string' ? data.error : `Request failed (${res.status})`;
+    throw new Error(errMsg);
   }
   return data as T;
 }

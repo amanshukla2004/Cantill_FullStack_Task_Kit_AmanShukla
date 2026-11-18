@@ -65,9 +65,8 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
 
   const sendMessage = async (text: string) => {
     const clean = text.trim();
-    if (!clean || sending) return;
+    if (!clean || sending || createdPr) return;
     setError(null);
-    setCreatedPr(null);
     setSending(true);
     setMessages((prev) => [...prev, { role: 'user', content: clean }]);
     setInput('');
@@ -306,12 +305,20 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
                     {createdPr.decision.reason}
                   </div>
                 </div>
-                <button
-                  className="btn btn-primary btn-sm"
-                  onClick={() => onNavigateWorkspace()}
-                >
-                  Open in Workspace <ArrowRight size={14} />
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={resetChat}
+                  >
+                    <RefreshCw size={14} /> New Request
+                  </button>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => onNavigateWorkspace()}
+                  >
+                    Open in Workspace <ArrowRight size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -333,12 +340,20 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
           >
             <input
               className="input"
-              placeholder='Type your request (e.g. "need 200 nitrile gloves for Chakan by next Friday")...'
+              placeholder={
+                createdPr
+                  ? 'PR confirmed. Click "New Request" to start another requisition.'
+                  : 'Type your request (e.g. "need 200 nitrile gloves for Chakan by next Friday")...'
+              }
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              disabled={sending}
+              disabled={sending || Boolean(createdPr)}
             />
-            <button type="submit" className="btn btn-primary" disabled={sending || !input.trim()}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={sending || Boolean(createdPr) || !input.trim()}
+            >
               <Send size={15} /> Send
             </button>
           </form>

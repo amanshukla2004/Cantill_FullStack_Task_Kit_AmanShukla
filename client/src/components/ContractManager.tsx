@@ -22,6 +22,7 @@ export const ContractManager: React.FC<Props> = ({ masterData, onDataChanged }) 
   const [extracting, setExtracting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Form state for PDF-extracted or manual contract
@@ -70,6 +71,7 @@ export const ContractManager: React.FC<Props> = ({ masterData, onDataChanged }) 
           ? ext.lines
           : [{ item_code: '', description: '', uom: 'NOS', rate: 0 }]
       );
+      setModalError(null);
       setModalOpen(true);
       setSuccess(
         `Extracted ${ext.contract_id || file.name} (${ext.lines.length} Schedule A items) via ${ext.extraction_method}. Verify fields and save.`
@@ -85,6 +87,7 @@ export const ContractManager: React.FC<Props> = ({ masterData, onDataChanged }) 
     e.preventDefault();
     setSaving(true);
     setError(null);
+    setModalError(null);
     try {
       const res = await api.saveContract({
         contract_id: contractId,
@@ -102,7 +105,7 @@ export const ContractManager: React.FC<Props> = ({ masterData, onDataChanged }) 
       await loadContracts(asOfDate);
       onDataChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save contract');
+      setModalError(err instanceof Error ? err.message : 'Failed to save contract');
     } finally {
       setSaving(false);
     }
@@ -117,6 +120,7 @@ export const ContractManager: React.FC<Props> = ({ masterData, onDataChanged }) 
     setValueCap('1500000');
     setSource('MANUAL');
     setLines([{ item_code: '', description: '', uom: 'NOS', rate: 0 }]);
+    setModalError(null);
     setModalOpen(true);
   };
 
@@ -290,6 +294,7 @@ export const ContractManager: React.FC<Props> = ({ masterData, onDataChanged }) 
               </button>
             </div>
             <form className="card-body" onSubmit={handleSave}>
+              {modalError && <div className="alert alert-error">{modalError}</div>}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600 }}>Contract ID *</label>

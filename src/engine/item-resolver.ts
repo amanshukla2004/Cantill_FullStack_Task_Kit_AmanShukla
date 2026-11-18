@@ -181,12 +181,15 @@ function extractNumericTokens(tokens: string[]): string[] {
   return tokens.filter((t) => /\d/.test(t));
 }
 
+const UNIT_SUFFIX_RE =
+  /(?:sqmm|micron|lph|ltr|gsm|cum|ply|ton|mm|kg|kw|hp|gb|l|w|a|v)$/i;
+
 function hasNumericConflict(qNums: string[], iNums: string[]): boolean {
   if (qNums.length === 0 || iNums.length === 0) return false;
   for (const qn of qNums) {
-    const qBase = qn.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph|gsm|cum|ply|ton|sqmm|micron$/i, '');
+    const qBase = qn.replace(UNIT_SUFFIX_RE, '');
     const matched = iNums.some((inm) => {
-      const iBase = inm.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph|gsm|cum|ply|ton|sqmm|micron$/i, '');
+      const iBase = inm.replace(UNIT_SUFFIX_RE, '');
       return inm === qn || (qBase.length > 0 && iBase === qBase);
     });
     if (!matched) {

@@ -7,6 +7,7 @@ export const PreferredSuppliers: React.FC = () => {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<
     Array<{
       item_code: string;
@@ -21,9 +22,12 @@ export const PreferredSuppliers: React.FC = () => {
 
   const loadPsl = async (dateVal: string) => {
     setLoading(true);
+    setError(null);
     try {
       const res = await api.getPreferredSuppliers(dateVal);
       setItems(res.items);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load Preferred Supplier rankings');
     } finally {
       setLoading(false);
     }
@@ -55,6 +59,7 @@ export const PreferredSuppliers: React.FC = () => {
 
   return (
     <div>
+      {error && <div className="alert alert-error">{error}</div>}
       <div className="alert alert-info" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
         <div>
           <Award size={15} style={{ verticalAlign: -2, marginRight: 6 }} />

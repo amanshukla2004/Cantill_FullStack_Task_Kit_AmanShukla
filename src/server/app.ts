@@ -4,6 +4,8 @@ import express, { Express } from 'express';
 import cors from 'cors';
 import { DatabaseSync } from 'node:sqlite';
 import { loadMasterDataSnapshot } from './db.js';
+import { formatPolicyVersion } from '../engine/waterfall-evaluator.js';
+import { groqClient } from './services/groq-client.js';
 import { createBatchRouter } from './routes/batch.js';
 import { createSuppliersRouter } from './routes/suppliers.js';
 import { createContractsRouter } from './routes/contracts.js';
@@ -24,9 +26,9 @@ export function createApp(db: DatabaseSync): Express {
     const activePolicy = snap.policies.find((p) => p.status === 'ACTIVE') || snap.policies[0];
     res.json({
       status: 'ok',
-      active_policy_version: activePolicy ? `v${activePolicy.version}` : 'none',
+      active_policy_version: activePolicy ? formatPolicyVersion(activePolicy.version) : 'none',
       active_policy_effective_date: activePolicy?.effective_date ?? null,
-      groq_configured: Boolean(process.env.GROQ_API_KEY?.trim()),
+      groq_configured: groqClient.isConfigured(),
       counts: {
         plants: snap.plants.size,
         items: snap.items.size,

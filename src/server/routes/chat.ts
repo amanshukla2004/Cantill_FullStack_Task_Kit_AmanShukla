@@ -52,6 +52,13 @@ export function createChatRouter(db: DatabaseSync): Router {
       .get(sessionId) as Record<string, unknown> | undefined;
 
     if (existing) {
+      if (String(existing.status) === 'CONFIRMED') {
+        res.status(409).json({
+          error:
+            'This chat session has already been confirmed and created as a PR. Start a new chat session to raise another PR.'
+        });
+        return;
+      }
       currentSlots = JSON.parse(String(existing.slots_json)) as ChatSlots;
       history = JSON.parse(String(existing.messages_json)) as ChatMessage[];
     }
@@ -262,6 +269,7 @@ export function createChatRouter(db: DatabaseSync): Router {
 
     let requirementId: number;
     let groupId: string;
+    let persistedPoId: string | null = null;
     let clubbedWithExisting = false;
 
     if (existingReqRow && evalItem) {
@@ -272,6 +280,7 @@ export function createChatRouter(db: DatabaseSync): Router {
         decisionRow.decision === 'PO'
           ? (existingReqRow.po_id ? String(existingReqRow.po_id) : `PO-CHAT-${String(chatPrCount + 1).padStart(4, '0')}`)
           : null;
+      persistedPoId = updatedPoId;
 
       db.prepare(
         `UPDATE requirements
@@ -309,6 +318,33 @@ export function createChatRouter(db: DatabaseSync): Router {
       );
     } else {
       groupId = `GRP-CHAT-${String(chatPrCount + 1).padStart(4, '0')}`;
+
+      // Clause 7.1: Check if pipeline consolidated this new PO requirement with an existing open chat PO within 24h
+      let assignedPoId: string | null = null;
+      if (decisionRow.decision === 'PO' && evalItem?.po_id) {
+        const sharedPoGroup = pipelineResult.poGroups.find((g) => g.po_id === evalItem.po_id);
+        let reusedPoId: string | null = null;
+        if (sharedPoGroup && sharedPoGroup.requirement_group_ids.length > 1) {
+          for (const otherEval of pipelineResult.evaluatedRequirements) {
+            if (
+              otherEval.po_id === evalItem.po_id &&
+              otherEval.requirement.group_id !== evalItem.requirement.group_id
+            ) {
+              const firstLine = otherEval.requirement.lines[0];
+              const otherRow = firstLine
+                ? prNoToExistingReq.get(`${firstLine.pr_no}/${firstLine.pr_line}`)
+                : undefined;
+              if (otherRow?.po_id) {
+                reusedPoId = String(otherRow.po_id);
+                break;
+              }
+            }
+          }
+        }
+        assignedPoId = reusedPoId || `PO-CHAT-${String(chatPrCount + 1).padStart(4, '0')}`;
+      }
+      persistedPoId = assignedPoId;
+
       const reqInsert = db
         .prepare(
           `INSERT INTO requirements
@@ -319,7 +355,7 @@ export function createChatRouter(db: DatabaseSync): Router {
         )
         .run(
           groupId,
-          evalItem?.po_id ? `PO-CHAT-${String(chatPrCount + 1).padStart(4, '0')}` : null,
+          assignedPoId,
           decisionRow.resolved_item_code,
           prLine.plant,
           prLine.created_at,
@@ -372,7 +408,11 @@ export function createChatRouter(db: DatabaseSync): Router {
       requirement_id: requirementId,
       group_id: groupId,
       clubbed_with_existing: clubbedWithExisting,
-      decision: decisionRow
+      decision: {
+        ...decisionRow,
+        group_id: groupId,
+        po_id: persistedPoId || ''
+      }
     });
   });
 

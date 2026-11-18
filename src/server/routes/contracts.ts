@@ -145,64 +145,82 @@ export function createContractsRouter(db: DatabaseSync): Router {
       return;
     }
 
+    const seenItems = new Set<string>();
     for (const line of data.lines) {
-      if (!snap.items.has(line.item_code.toUpperCase())) {
+      const code = line.item_code.trim().toUpperCase();
+      if (!snap.items.has(code)) {
         res.status(400).json({ error: `Item '${line.item_code}' does not exist in item master.` });
         return;
       }
+      if (seenItems.has(code)) {
+        res.status(400).json({
+          error: `Duplicate item_code '${code}' in Schedule A lines; each item can appear only once per contract.`
+        });
+        return;
+      }
+      seenItems.add(code);
     }
 
     const contractId = data.contract_id.trim().toUpperCase();
     const supplierName = data.supplier_name?.trim() || supplier.name;
 
-    db.prepare(
-      `INSERT OR REPLACE INTO contracts
-       (contract_id, supplier_id, supplier_name, start_date, end_date, value_cap, initial_consumed_value, current_consumed_value, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      contractId,
-      supplier.supplier_id,
-      supplierName,
-      data.start_date,
-      data.end_date,
-      data.value_cap,
-      data.initial_consumed_value,
-      data.initial_consumed_value,
-      data.source
-    );
-
-    db.prepare('DELETE FROM contract_lines WHERE contract_id = ?').run(contractId);
-    const insertLine = db.prepare(
-      `INSERT INTO contract_lines (contract_id, item_code, description, uom, rate)
-       VALUES (?, ?, ?, ?, ?)`
-    );
-    for (const line of data.lines) {
-      insertLine.run(
+    db.exec('BEGIN');
+    try {
+      db.prepare(
+        `INSERT OR REPLACE INTO contracts
+         (contract_id, supplier_id, supplier_name, start_date, end_date, value_cap, initial_consumed_value, current_consumed_value, source)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
         contractId,
-        line.item_code.toUpperCase(),
-        line.description.trim(),
-        line.uom.trim().toUpperCase(),
-        line.rate
+        supplier.supplier_id,
+        supplierName,
+        data.start_date,
+        data.end_date,
+        data.value_cap,
+        data.initial_consumed_value,
+        data.initial_consumed_value,
+        data.source
       );
-    }
 
-    const nowIso = new Date().toISOString();
-    db.prepare(
-      `INSERT INTO audit_logs (entity_type, entity_id, action, actor, timestamp, details_json)
-       VALUES ('CONTRACT', ?, 'CREATED_OR_UPDATED', ?, ?, ?)`
-    ).run(
-      contractId,
-      data.actor,
-      nowIso,
-      JSON.stringify({
-        supplier_id: supplier.supplier_id,
-        start_date: data.start_date,
-        end_date: data.end_date,
-        value_cap: data.value_cap,
-        line_count: data.lines.length,
-        source: data.source
-      })
-    );
+      db.prepare('DELETE FROM contract_lines WHERE contract_id = ?').run(contractId);
+      const insertLine = db.prepare(
+        `INSERT INTO contract_lines (contract_id, item_code, description, uom, rate)
+         VALUES (?, ?, ?, ?, ?)`
+      );
+      for (const line of data.lines) {
+        insertLine.run(
+          contractId,
+          line.item_code.trim().toUpperCase(),
+          line.description.trim(),
+          line.uom.trim().toUpperCase(),
+          line.rate
+        );
+      }
+
+      const nowIso = new Date().toISOString();
+      db.prepare(
+        `INSERT INTO audit_logs (entity_type, entity_id, action, actor, timestamp, details_json)
+         VALUES ('CONTRACT', ?, 'CREATED_OR_UPDATED', ?, ?, ?)`
+      ).run(
+        contractId,
+        data.actor,
+        nowIso,
+        JSON.stringify({
+          supplier_id: supplier.supplier_id,
+          start_date: data.start_date,
+          end_date: data.end_date,
+          value_cap: data.value_cap,
+          line_count: data.lines.length,
+          source: data.source
+        })
+      );
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      const msg = err instanceof Error ? err.message : 'Failed to save contract';
+      res.status(500).json({ error: msg });
+      return;
+    }
 
     res.status(201).json({
       message: `Contract ${contractId} saved successfully.`,

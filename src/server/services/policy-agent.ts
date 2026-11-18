@@ -239,11 +239,19 @@ function parseAmendmentDeterministic(
             baseSpotLimit = valCond.value;
           }
           if (amt < baseSpotLimit) {
-            if (plantMention) {
-              r54.conditions.all.push({ field: 'plant', op: 'neq', value: plantMention });
-            }
-            if (matchedCategory) {
-              r54.conditions.all.push({ field: 'category', op: 'neq', value: matchedCategory });
+            if (extraConds.length === 1) {
+              r54.conditions.all.push({
+                field: extraConds[0].field,
+                op: 'neq',
+                value: extraConds[0].value
+              });
+            } else if (extraConds.length > 1) {
+              // Exact De Morgan exclusion: NOT(plant = X AND category = Y)
+              r54.conditions.all.push({
+                not: {
+                  all: extraConds.map((c) => ({ ...c }))
+                }
+              });
             }
           }
         }

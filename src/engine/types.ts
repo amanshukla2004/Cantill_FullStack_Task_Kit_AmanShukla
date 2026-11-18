@@ -134,7 +134,7 @@ export interface Policy {
   version: string;
   title: string;
   effective_date: string; // YYYY-MM-DD
-  status: 'DRAFT' | 'ACTIVE' | 'SUPERSEDED';
+  status: 'DRAFT' | 'ACTIVE' | 'SUPERSEDED' | 'ROLLED_BACK';
   created_at: string;
   approved_by: string | null;
   approved_at?: string | null;

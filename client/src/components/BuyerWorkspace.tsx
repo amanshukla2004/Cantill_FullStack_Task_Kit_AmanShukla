@@ -26,6 +26,16 @@ function routeBadgeClass(route: string): string {
 export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, refreshTick }) => {
   const [subTab, setSubTab] = useState<'queue' | 'orders' | 'audit'>('queue');
   const [requirements, setRequirements] = useState<RequirementRecord[]>([]);
+  const [batches, setBatches] = useState<
+    Array<{
+      batch_id: number;
+      filename: string;
+      uploaded_at: string;
+      policy_version_at_run: string;
+      total_lines: number;
+    }>
+  >([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<number | undefined>(initialBatchId);
   const [activeBatchId, setActiveBatchId] = useState<number | null>(initialBatchId ?? null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -42,6 +52,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
   const [overrideRoute, setOverrideRoute] = useState('SPOT_PO');
   const [overrideSupplier, setOverrideSupplier] = useState('');
   const [overrideComment, setOverrideComment] = useState('');
+  const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Orders & Audit state
@@ -61,16 +72,23 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
     }>
   >([]);
 
-  const loadWorkspace = async () => {
+  useEffect(() => {
+    setSelectedBatchId(initialBatchId);
+  }, [initialBatchId]);
+
+  const loadWorkspace = async (batchOverride?: number) => {
     setLoading(true);
     try {
-      const [reqRes, ordRes, audRes] = await Promise.all([
-        api.getRequirements(initialBatchId ? { batch_id: initialBatchId } : undefined),
+      const targetBatch = batchOverride !== undefined ? batchOverride : selectedBatchId;
+      const [reqRes, ordRes, audRes, batchRes] = await Promise.all([
+        api.getRequirements(targetBatch ? { batch_id: targetBatch } : undefined),
         api.getOrders(),
-        api.getAuditLogs()
+        api.getAuditLogs(),
+        api.getBatches()
       ]);
       setRequirements(reqRes.requirements);
       setActiveBatchId(reqRes.batch_id);
+      setBatches(batchRes.batches);
       setOrders(ordRes);
       setAuditLogs(audRes.logs);
       if (reqRes.requirements.length > 0 && !reqRes.requirements.some((r) => r.id === selectedId)) {
@@ -85,7 +103,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
 
   useEffect(() => {
     loadWorkspace();
-  }, [initialBatchId, refreshTick]);
+  }, [selectedBatchId, refreshTick]);
 
   const filtered = useMemo(() => {
     return requirements.filter((r) => {
@@ -133,6 +151,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
     setOverrideRoute(req.decision === 'PO' ? 'RFQ' : 'SPOT_PO');
     setOverrideSupplier(req.supplier_id || req.preferred_supplier_breakdown[0]?.supplier_id || '');
     setOverrideComment('');
+    setModalError(null);
     setOverrideOpen(true);
   };
 
@@ -141,6 +160,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
     if (!selected) return;
     setSubmitting(true);
     setFeedback(null);
+    setModalError(null);
     try {
       const res = await api.overrideRequirement(selected.id, {
         actor: buyerName,
@@ -156,7 +176,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
       });
       await loadWorkspace();
     } catch (err) {
-      setFeedback({ type: 'error', text: err instanceof Error ? err.message : 'Override failed' });
+      setModalError(err instanceof Error ? err.message : 'Override failed');
     } finally {
       setSubmitting(false);
     }
@@ -220,7 +240,26 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {batches.length > 0 && (
+            <select
+              className="select"
+              style={{ width: 220 }}
+              value={selectedBatchId ? String(selectedBatchId) : ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setSelectedBatchId(v ? Number(v) : undefined);
+              }}
+              title="Select PR batch run to inspect"
+            >
+              <option value="">Latest Batch (#{batches[0].batch_id})</option>
+              {batches.map((b) => (
+                <option key={b.batch_id} value={String(b.batch_id)}>
+                  Batch #{b.batch_id} · {b.filename} ({b.policy_version_at_run})
+                </option>
+              ))}
+            </select>
+          )}
           <input
             className="input"
             style={{ width: 190 }}
@@ -265,11 +304,12 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
                     setFeedback(null);
                     try {
                       const res = await api.processSampleBatch();
+                      setSelectedBatchId(res.batch_id);
                       setFeedback({
                         type: 'success',
                         text: `Loaded sample_pr_batch.csv (${res.summary.total_lines} PR lines -> ${res.summary.requirements_count} requirements) under ${res.policy_version}.`
                       });
-                      await loadWorkspace();
+                      await loadWorkspace(res.batch_id);
                     } catch (e) {
                       setFeedback({ type: 'error', text: e instanceof Error ? e.message : 'Failed' });
                     } finally {
@@ -710,6 +750,7 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
               </button>
             </div>
             <form className="card-body" onSubmit={handleOverrideSubmit}>
+              {modalError && <div className="alert alert-error">{modalError}</div>}
               <div className="alert alert-info">
                 <AlertTriangle size={14} style={{ verticalAlign: -2, marginRight: 6 }} />
                 Policy Clause 8.1: The original system decision (<strong>{selected.route}</strong>) is kept in the audit log alongside your written justification.

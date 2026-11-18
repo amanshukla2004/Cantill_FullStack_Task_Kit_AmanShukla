@@ -1,6 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Upload, Sparkles, CheckCircle2, Trash2, Code2, ShieldCheck } from 'lucide-react';
+import { Upload, Sparkles, CheckCircle2, Trash2, Code2, ShieldCheck, RotateCcw } from 'lucide-react';
 import { api, PolicyDto } from '../api/client';
+
+function safeParseSummaryDiff(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
 
 interface Props {
   onPolicyActivated: () => void;
@@ -34,6 +44,7 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
   const [draftNeedByDays, setDraftNeedByDays] = useState(7);
   const [draftConsolHours, setDraftConsolHours] = useState(24);
   const [draftHistoryDays, setDraftHistoryDays] = useState(365);
+  const [draftPslDays, setDraftPslDays] = useState(548);
   const [draftRulesJson, setDraftRulesJson] = useState('');
 
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -68,6 +79,7 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
     setDraftNeedByDays(p.clubbing_need_by_window_days);
     setDraftConsolHours(p.po_consolidation_window_hours);
     setDraftHistoryDays(p.active_history_lookback_days);
+    setDraftPslDays(p.psl_lookback_days ?? 548);
     setDraftRulesJson(JSON.stringify(p.rules, null, 2));
     setEditJsonOpen(false);
   };
@@ -114,8 +126,8 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
     }
   };
 
-  const handleSaveEdits = async () => {
-    if (!draft) return;
+  const handleSaveEdits = async (): Promise<boolean> => {
+    if (!draft) return false;
     setError(null);
     try {
       const parsedRules = JSON.parse(draftRulesJson);
@@ -126,18 +138,19 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
         clubbing_need_by_window_days: Number(draftNeedByDays),
         po_consolidation_window_hours: Number(draftConsolHours),
         active_history_lookback_days: Number(draftHistoryDays),
+        psl_lookback_days: Number(draftPslDays),
         rules: parsedRules
       });
       setDraft(res.draft_policy);
-      const summary = res.draft_policy.summary_diff
-        ? (JSON.parse(res.draft_policy.summary_diff) as string[])
-        : diffSummary;
-      setDiffSummary(summary);
+      const summary = safeParseSummaryDiff(res.draft_policy.summary_diff);
+      setDiffSummary(summary.length > 0 ? summary : diffSummary);
       setEditJsonOpen(false);
       setSuccess('Draft rules updated & schema-validated. Review and click Approve & Activate.');
       await loadPolicies();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid JSON or rule schema');
+      return false;
     }
   };
 
@@ -145,6 +158,10 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
     setSubmitting(true);
     setError(null);
     try {
+      if (editJsonOpen && draft && policyId === draft.policy_id) {
+        const saved = await handleSaveEdits();
+        if (!saved) return;
+      }
       const res = await api.activatePolicy(policyId, approver);
       setDraft(null);
       setDiffSummary([]);
@@ -159,10 +176,15 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
   };
 
   const handleDiscard = async (policyId: number) => {
-    await api.deleteDraftPolicy(policyId);
-    setDraft(null);
-    setDiffSummary([]);
-    await loadPolicies();
+    setError(null);
+    try {
+      await api.deleteDraftPolicy(policyId);
+      setDraft(null);
+      setDiffSummary([]);
+      await loadPolicies();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to discard draft policy');
+    }
   };
 
   return (
@@ -386,7 +408,7 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
                     />
                   </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 10 }}>
                   <div>
                     <label style={{ fontSize: 11.5, fontWeight: 600 }}>Clubbing Created (d)</label>
                     <input
@@ -421,6 +443,15 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
                       className="input"
                       value={draftHistoryDays}
                       onChange={(e) => setDraftHistoryDays(Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, fontWeight: 600 }}>PSL Lookback (d)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      value={draftPslDays}
+                      onChange={(e) => setDraftPslDays(Number(e.target.value))}
                     />
                   </div>
                 </div>
@@ -537,7 +568,9 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
                           ? 'badge-po'
                           : p.status === 'DRAFT'
                             ? 'badge-emergency'
-                            : 'badge-neutral'
+                            : p.status === 'ROLLED_BACK'
+                              ? 'badge-error'
+                              : 'badge-neutral'
                       }`}
                     >
                       {p.status}
@@ -552,7 +585,7 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
                         onClick={() =>
                           populateDraft(
                             p,
-                            p.summary_diff ? JSON.parse(p.summary_diff) : [],
+                            safeParseSummaryDiff(p.summary_diff),
                             false,
                             []
                           )
@@ -560,8 +593,16 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
                       >
                         Review Draft
                       </button>
+                    ) : p.status === 'ACTIVE' ? (
+                      <span style={{ fontSize: 12, color: 'var(--emerald)', fontWeight: 600 }}>Live</span>
                     ) : (
-                      <span style={{ fontSize: 12, color: 'var(--text-subtle)' }}>Archived / Live</span>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        disabled={submitting}
+                        onClick={() => handleActivate(p.policy_id)}
+                      >
+                        <RotateCcw size={13} /> Rollback / Activate
+                      </button>
                     )}
                   </td>
                 </tr>

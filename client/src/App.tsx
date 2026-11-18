@@ -60,7 +60,10 @@ export const App: React.FC = () => {
     loadGlobal();
   }, [refreshTick]);
 
-  const bumpRefresh = () => setRefreshTick((t) => t + 1);
+  const bumpRefresh = () => {
+    setWorkspaceBatchId(undefined);
+    setRefreshTick((t) => t + 1);
+  };
 
   return (
     <div className="app-shell">

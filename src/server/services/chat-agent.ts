@@ -172,8 +172,10 @@ function extractSlotsDeterministic(
   currentSlots: ChatSlots,
   plants: Map<string, Plant>,
   referenceDateIso: string
-): z.infer<typeof GroqSlotExtractionSchema> & { validation_note?: string } {
-  const out: z.infer<typeof GroqSlotExtractionSchema> & { validation_note?: string } = {};
+): z.infer<typeof GroqSlotExtractionSchema> & { validation_notes: string[] } {
+  const out: z.infer<typeof GroqSlotExtractionSchema> & { validation_notes: string[] } = {
+    validation_notes: []
+  };
   const trimmed = message.trim();
   const lower = trimmed.toLowerCase();
 
@@ -201,17 +203,25 @@ function extractSlotsDeterministic(
   } else {
     const unknownPlant = trimmed.match(/\b((?:PUN|CHK|MUM|BLR|DEL)\d+)\b/i);
     if (unknownPlant && !plants.has(unknownPlant[1].toUpperCase())) {
-      out.validation_note = `Note: "${unknownPlant[1].toUpperCase()}" is not a valid Corvo plant. Please choose PUN1 (Bhosari) or CHK1 (Chakan).`;
+      out.validation_notes.push(
+        `Note: "${unknownPlant[1].toUpperCase()}" is not a valid Corvo plant. Please choose PUN1 (Bhosari) or CHK1 (Chakan).`
+      );
     }
   }
 
   // Detect invalid non-positive quantities explicitly (both inline and standalone like "-50" or "0")
   const standaloneNonPos = trimmed.match(/^\s*(-?\d+(?:\.\d+)?)\s*$/);
-  const inlineNonPos = trimmed.match(/\b(?:need|want|order|qty|quantity|change(?:\s+qty|\s+quantity)?|make\s+it)\s+(?:to\s+)?(-?\d+(?:\.\d+)?)\b/i);
+  const inlineNonPos = trimmed.match(
+    /\b(?:need|want|order|qty|quantity|change(?:\s+qty|\s+quantity)?|make\s+it)\s+(?:to\s+)?(-?\d+(?:\.\d+)?)\b/i
+  );
   if (standaloneNonPos && Number(standaloneNonPos[1]) <= 0) {
-    out.validation_note = `Note: Quantity must be greater than 0 (received ${standaloneNonPos[1]}).`;
+    out.validation_notes.push(
+      `Note: Quantity must be greater than 0 (received ${standaloneNonPos[1]}).`
+    );
   } else if (inlineNonPos && Number(inlineNonPos[1]) <= 0) {
-    out.validation_note = `Note: Quantity must be greater than 0 (received ${inlineNonPos[1]}).`;
+    out.validation_notes.push(
+      `Note: Quantity must be greater than 0 (received ${inlineNonPos[1]}).`
+    );
   }
 
   // Urgency detection
@@ -255,7 +265,12 @@ function extractSlotsDeterministic(
         /\b(?:change(?:\s+(?:the\s+)?(?:qty|quantity))?|update(?:\s+(?:the\s+)?(?:qty|quantity))?|set(?:\s+(?:the\s+)?(?:qty|quantity))?|make\s+it|qty|quantity)\s+(?:to\s+|=\s*)?(\d+(?:\.\d+)?)\b/i
       ) ||
       trimmed.match(/\b(?:need|want|order|buy|request)\s+(?:about\s+)?(\d+(?:\.\d+)?)\b/i) ||
-      trimmed.match(/\b(\d+(?:\.\d+)?)\s+(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)\b/i);
+      trimmed.match(/\b(\d+(?:\.\d+)?)\s+(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)\b/i) ||
+      (currentSlots.quantity === null
+        ? trimmed.match(
+            /^\s*(\d+(?:\.\d+)?)(?=\s*(?:,|for\b|at\b|to\b|by\b|normal\b|emergency\b))/i
+          )
+        : null);
     if (qtyMatch) {
       const q = Number(qtyMatch[1]);
       if (Number.isFinite(q) && q > 0) out.quantity = q;
@@ -650,8 +665,8 @@ Latest user message: "${opts.userMessage}"`;
   const { reply: baseReply, quick_replies } = buildDeterministicReply(slots, missing);
   const reply = isGreeting && slots.item_match_status === 'UNSET'
     ? 'Hello! Tell me what item you need to purchase along with quantity, plant (PUN1 Bhosari or CHK1 Chakan), need-by date, and urgency — for example: "need 200 nitrile gloves for Chakan by next Friday".'
-    : det.validation_note
-      ? `${det.validation_note}\n\n${baseReply}`
+    : det.validation_notes.length > 0
+      ? `${det.validation_notes.join('\n')}\n\n${baseReply}`
       : baseReply;
 
   return {

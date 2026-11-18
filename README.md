@@ -63,7 +63,7 @@ npm run dev:client   # React dev server on :5173 (proxies /api -> :3000)
 
 ## Automated Verification Suite
 
-Run all **50 automated tests** (covering Phase 0 seeding & PDF ingestion, all **14/14 Worked Examples** on the full 186-line `sample_pr_batch.csv`, all **3/3 Preferred Supplier rankings**, all **39/39 free-text descriptions** + **27/27 unseen adversarial & spaced-dimension/typo descriptions**, anomalies & duplicate guard, Buyer Workspace approvals/overrides/cross-batch PO isolation/Clause 5.7 enforcement, Chat Intake happy/vague/unknown/multi-turn edit/double-confirm/live clubbing flows, and end-to-end zero-code Policy amendments including rollback isolation, tightened plant/category limits, and per-date mid-batch clubbing & consolidation windows):
+Run all **58 automated tests** (11 suites covering Phase 0 seeding & PDF ingestion, all **14/14 Worked Examples** on the full 186-line `sample_pr_batch.csv`, all **3/3 Preferred Supplier rankings**, all **39/39 free-text descriptions** + **27/27 unseen adversarial & spaced-dimension/typo descriptions** + unit-stripping edge cases, anomalies & duplicate guard, Buyer Workspace approvals/overrides/cross-batch PO isolation/Clause 5.7 enforcement, Chat Intake happy/vague/unknown/multi-turn edit/confirmed-session 409/live clubbing & 24h PO consolidation flows, duplicate contract line atomicity, and end-to-end zero-code Policy amendments including `ROLLED_BACK` isolation, De Morgan combined plant+category tightening, and per-date mid-batch clubbing & consolidation windows):
 
 ```bash
 npm test
@@ -81,7 +81,7 @@ npm test
 | `GET /api/preferred-suppliers` | Preferred supplier lists (`?as_of_date=YYYY-MM-DD&format=csv\|json`) |
 | `POST /api/chat/message` | Multi-turn conversational PR slot-filling & deterministic item matching |
 | `POST /api/chat/confirm-pr` | Confirm chat slots, create PR, evaluate active policy, add to Buyer Workspace |
-| `GET /api/policies` | List all versioned policies (`ACTIVE`, `SUPERSEDED`, `DRAFT`) and AST rules |
+| `GET /api/policies` | List all versioned policies (`ACTIVE`, `SUPERSEDED`, `ROLLED_BACK`, `DRAFT`) and AST rules |
 | `POST /api/policy/amend` | Upload amendment doc (`file`) or chat `instruction` → draft AST + plain diff |
 | `PUT /api/policy/:id` | Edit a `DRAFT` policy's rules, dates, or windows (Zod-validated) |
 | `POST /api/policy/:id/activate` | Approve & activate a policy version with zero code changes |
