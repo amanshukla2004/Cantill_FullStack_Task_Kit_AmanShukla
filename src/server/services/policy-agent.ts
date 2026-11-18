@@ -173,11 +173,25 @@ function parseAmendmentDeterministic(
     draft.title = `Corvo Engineering Procurement Policy v${verMatch[1]}`;
   }
 
-  // Extract effective date (YYYY-MM-DD)
-  const dateMatch = amendmentText.match(/effective(?:\s+from|\s+date)?[:\s]+(\d{4}-\d{2}-\d{2})/i)
-    || amendmentText.match(/\b(202\d-\d{2}-\d{2})\b/);
-  if (dateMatch) {
-    draft.effective_date = dateMatch[1];
+  // Extract effective date (supports YYYY-MM-DD and prose dates like "1 November 2026" / "19 Nov 2026")
+  const isoDateMatch =
+    amendmentText.match(/effective(?:\s+from|\s+date)?[:\s]+(\d{4}-\d{2}-\d{2})/i) ||
+    amendmentText.match(/\b(202\d-\d{2}-\d{2})\b/);
+  if (isoDateMatch) {
+    draft.effective_date = isoDateMatch[1];
+  } else {
+    const months: Record<string, string> = {
+      jan: '01', january: '01', feb: '02', february: '02', mar: '03', march: '03',
+      apr: '04', april: '04', may: '05', jun: '06', june: '06', jul: '07', july: '07',
+      aug: '08', august: '08', sep: '09', sept: '09', september: '09',
+      oct: '10', october: '10', nov: '11', november: '11', dec: '12', december: '12'
+    };
+    const proseDate = amendmentText.match(
+      /\b(\d{1,2})\s+(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+(202\d)\b/i
+    );
+    if (proseDate) {
+      draft.effective_date = `${proseDate[3]}-${months[proseDate[2].toLowerCase()]}-${proseDate[1].padStart(2, '0')}`;
+    }
   }
 
   // Check macro window changes
@@ -338,7 +352,7 @@ CRITICAL RULES:
      - If a category/plant has a HIGHER limit or special sourcing route (e.g. Safety & PPE always RFQ, or Services above ₹1,00,000 require RFQ), place that rule BEFORE the generic rule it overrides!
    - Keep priority_order strictly sequential integers starting at 1 (1, 2, 3, ...).
 3. Valid condition fields ONLY:
-   "item_type" ("Material"|"Service"|"Capex"), "category", "plant" ("PUN1"|"CHK1"), "group_value_inr" (number), "urgency" ("Normal"|"Emergency"), "contract_available" (boolean), "has_active_365d_history" (boolean), "is_new_item" (boolean), "total_quantity" (number).
+   "item_code" (e.g. "ITM-1048"), "item_type" ("Material"|"Service"|"Capex"), "category", "plant" ("PUN1"|"CHK1"), "department" (e.g. "Maintenance", "Production", "IT", "Stores", "Quality", "Tool Room", "Admin"), "uom" (e.g. "NOS", "KG", "LTR"), "group_value_inr" (number), "urgency" ("Normal"|"Emergency"), "contract_available" (boolean), "has_active_365d_history" (boolean), "is_new_item" (boolean), "total_quantity" (number).
 4. Valid condition operators ONLY: "eq", "neq", "lt", "lte", "gt", "gte", "in", "not_in".
 5. Condition structure: either leaf { "field", "op", "value" } or compound { "all": [...] } / { "any": [...] } / { "not": {...} }.
 6. Valid outcomes: "PO" or "SOURCING_REQUEST".

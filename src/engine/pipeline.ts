@@ -48,11 +48,15 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
     policies
   } = input;
 
-  // Pick the latest active policy for macro clubbing/consolidation defaults
-  const activePolicies = policies
-    .filter((p) => p.status === 'ACTIVE' || p.status === 'SUPERSEDED')
-    .sort((a, b) => b.effective_date.localeCompare(a.effective_date) || b.policy_id - a.policy_id);
-  const primaryPolicy = activePolicies[0] || policies[0];
+  // Resolve macro clubbing/consolidation policy as of the batch's latest PR date
+  // so future-dated policy versions never prematurely alter earlier batches
+  const batchDates = prLines
+    .map((l) => extractDateOnly(l.created_at))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+    .sort();
+  const maxBatchDate =
+    batchDates[batchDates.length - 1] || new Date().toISOString().slice(0, 10);
+  const primaryPolicy = resolvePolicyForDate(policies, maxBatchDate);
 
   // Step 1: Anomaly validation, duplicate guard & deterministic item resolution
   const { validLines, anomalyOutputs } = filterAnomaliesAndResolveItems(

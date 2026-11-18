@@ -7,7 +7,7 @@ As required by Section 7 of the task brief, this document discloses all AI tools
 ## 1. AI Tools Used
 
 ### A. Inside the Application (Runtime — Hybrid AI + Deterministic Architecture)
-- **Provider & Model**: **Groq API** via the official **`groq-sdk`** Node.js client (`llama-3.3-70b-versatile`, configurable via `GROQ_MODEL`, `temperature: 0`, `response_format: { type: "json_object" }`).
+- **Provider & Model**: **Groq API** via the official **`groq-sdk`** Node.js client (`openai/gpt-oss-120b`, configurable via `GROQ_MODEL`, `temperature: 0`, `response_format: { type: "json_object" }`).
 - **No LangChain / No Vector DB / No RAG**: Deliberately omitted heavy orchestration frameworks and embeddings. With 73 items, 48 suppliers, and 12 contracts, vector search introduces part-number confusion (e.g. `6205-2RS` vs `6308-ZZ`), whereas a direct 65-line `GroqClient` wrapper with strict **Zod** schema validation and 1 automatic self-repair retry is transparent, fast, and easy to maintain.
 - **Exactly Where Groq AI Is Used**:
   1. **Conversational Chat Intake (`src/server/services/chat-agent.ts`)**: Extracts structured procurement slots (`item_query`, `quantity`, `plant`, relative `need_by_date` like *"next Friday"*, `urgency`, `estimated_unit_price`) from natural language. **Anti-hallucination guardrail**: the LLM is never allowed to invent `ITM-XXXX` catalog codes—item matching and ambiguity detection always execute deterministically against SQLite (`item-resolver.ts`).

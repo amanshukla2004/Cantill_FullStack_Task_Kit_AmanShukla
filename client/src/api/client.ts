@@ -255,6 +255,7 @@ export const api = {
       pr_no: string;
       requirement_id: number;
       group_id: string;
+      clubbed_with_existing?: boolean;
       decision: BatchProcessResponse['decisions'][number];
     }>('/api/chat/confirm-pr', {
       method: 'POST',
@@ -271,6 +272,8 @@ export const api = {
       body: fd
     });
   },
+  processSampleBatch: () =>
+    apiFetch<BatchProcessResponse>('/api/process-sample-batch', { method: 'POST' }),
   getBatches: () =>
     apiFetch<{
       batches: Array<{

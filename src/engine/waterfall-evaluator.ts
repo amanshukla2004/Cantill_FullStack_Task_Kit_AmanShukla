@@ -79,9 +79,12 @@ export function evaluateWaterfall(
   );
 
   const ctx: EvaluationContext = {
+    item_code: item.item_code,
     item_type: item.item_type,
     category: item.category,
     plant: req.plant,
+    department: req.lines[0]?.department || '',
+    uom: item.uom,
     group_value_inr: valuation.group_value_inr,
     urgency: req.is_emergency ? 'Emergency' : 'Normal',
     contract_available: valuation.contract_used !== null,

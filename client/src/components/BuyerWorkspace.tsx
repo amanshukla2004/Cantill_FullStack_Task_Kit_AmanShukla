@@ -252,9 +252,31 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
                 <p style={{ color: 'var(--text-muted)', marginBottom: 8 }}>
                   No requirements in the Buyer Workspace yet.
                 </p>
-                <p style={{ fontSize: 13, color: 'var(--text-subtle)' }}>
-                  Raise a PR in <strong>Chat Intake</strong> or upload a PR batch CSV to populate decisions here.
+                <p style={{ fontSize: 13, color: 'var(--text-subtle)', marginBottom: 16 }}>
+                  Raise a PR in <strong>Chat Intake</strong>, upload a PR batch CSV, or load the 186-line kit sample batch in one click:
                 </p>
+                <button
+                  className="btn btn-primary"
+                  disabled={submitting}
+                  onClick={async () => {
+                    setSubmitting(true);
+                    setFeedback(null);
+                    try {
+                      const res = await api.processSampleBatch();
+                      setFeedback({
+                        type: 'success',
+                        text: `Loaded sample_pr_batch.csv (${res.summary.total_lines} PR lines -> ${res.summary.requirements_count} requirements) under ${res.policy_version}.`
+                      });
+                      await loadWorkspace();
+                    } catch (e) {
+                      setFeedback({ type: 'error', text: e instanceof Error ? e.message : 'Failed' });
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                >
+                  {submitting ? 'Processing 186 PR Lines...' : 'Load Sample Batch (186 PRs)'}
+                </button>
               </div>
             </div>
           ) : (

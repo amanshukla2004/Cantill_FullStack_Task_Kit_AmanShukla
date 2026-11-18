@@ -335,9 +335,18 @@ export function resolveChatItemDeterministically(
     const top = enrichedCandidates[0];
     const second = enrichedCandidates[1];
     const gap = second ? top.score - second.score : top.score;
+    const topCov = rawCandidates[0].query_coverage;
+    const secondCov = rawCandidates[1]?.query_coverage ?? 0;
 
-    // Confident match: strong overlap AND clearly ahead of runner-up
-    if (top.score >= 0.6 && (!second || gap >= 0.18)) {
+    // Confident match: strong overlap OR unambiguous 100%-contained multi-token subset (e.g. "safety shoes", "a4 paper")
+    const isConfidentOverlap = top.score >= 0.6 && (!second || gap >= 0.18);
+    const isUnambiguousSubset =
+      itemQuery.trim().split(/\s+/).length >= 2 &&
+      topCov === 1.0 &&
+      top.score >= 0.4 &&
+      (!second || gap >= 0.15 || topCov - secondCov >= 0.25);
+
+    if (isConfidentOverlap || isUnambiguousSubset) {
       const item = catalog.get(top.item_code)!;
       return {
         status: 'MATCHED',

@@ -209,9 +209,26 @@ export function createChatRouter(db: DatabaseSync): Router {
       prLine.urgency
     );
 
-    // Run deterministic decision engine under active policy
+    // Check if this new chat PR clubs with any existing PENDING_REVIEW chat requirements (anti-splitting Clause 2!)
+    const openChatReqs = db
+      .prepare(
+        "SELECT * FROM requirements WHERE batch_id IS NULL AND status = 'PENDING_REVIEW' ORDER BY id ASC"
+      )
+      .all() as Array<Record<string, unknown>>;
+
+    const openChatLines: PRLine[] = [];
+    const prNoToExistingReq = new Map<string, Record<string, unknown>>();
+    for (const reqRow of openChatReqs) {
+      const parsedLines = JSON.parse(String(reqRow.lines_json)) as PRLine[];
+      for (const pl of parsedLines) {
+        openChatLines.push(pl);
+        prNoToExistingReq.set(`${pl.pr_no}/${pl.pr_line}`, reqRow);
+      }
+    }
+
+    // Run deterministic decision engine across open chat PRs + the new PR line
     const pipelineResult = runProcurementPipeline({
-      prLines: [prLine],
+      prLines: [...openChatLines, prLine],
       plants: snap.plants,
       items: snap.items,
       suppliers: snap.suppliers,
@@ -221,27 +238,49 @@ export function createChatRouter(db: DatabaseSync): Router {
       policies: snap.policies
     });
 
-    const evalItem = pipelineResult.evaluatedRequirements[0];
-    const decisionRow = pipelineResult.decisions[0];
-    const groupId = `GRP-CHAT-${String(chatPrCount + 1).padStart(4, '0')}`;
+    const decisionRow = pipelineResult.decisions.find(
+      (d) => d.pr_no === prLine.pr_no && d.pr_line === prLine.pr_line
+    )!;
+    const evalItem = pipelineResult.evaluatedRequirements.find((e) =>
+      e.requirement.lines.some((l) => l.pr_no === prLine.pr_no && l.pr_line === prLine.pr_line)
+    );
 
-    const reqInsert = db
-      .prepare(
-        `INSERT INTO requirements
-         (batch_id, group_id, po_id, resolved_item_code, plant, first_created_at, first_need_by_date,
-          total_quantity, is_emergency, decision, route, supplier_id, unit_price, group_value_inr,
-          suggested_supplier_ids, policy_version, clause_applied, reason, reference_doc, lines_json, status)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_REVIEW')`
-      )
-      .run(
-        groupId,
-        evalItem?.po_id ? `PO-CHAT-${String(chatPrCount + 1).padStart(4, '0')}` : null,
-        decisionRow.resolved_item_code,
-        prLine.plant,
-        prLine.created_at,
-        prLine.need_by_date,
-        prLine.quantity,
-        prLine.urgency === 'Emergency' ? 1 : 0,
+    // Did it club into an existing open chat requirement?
+    const clubbedAnchorLine = evalItem?.requirement.lines.find(
+      (l) => l.pr_no !== prLine.pr_no && prNoToExistingReq.has(`${l.pr_no}/${l.pr_line}`)
+    );
+    const existingReqRow = clubbedAnchorLine
+      ? prNoToExistingReq.get(`${clubbedAnchorLine.pr_no}/${clubbedAnchorLine.pr_line}`)
+      : undefined;
+
+    let requirementId: number;
+    let groupId: string;
+    let clubbedWithExisting = false;
+
+    if (existingReqRow && evalItem) {
+      clubbedWithExisting = true;
+      requirementId = Number(existingReqRow.id);
+      groupId = String(existingReqRow.group_id);
+
+      db.prepare(
+        `UPDATE requirements
+         SET total_quantity = ?,
+             is_emergency = ?,
+             decision = ?,
+             route = ?,
+             supplier_id = ?,
+             unit_price = ?,
+             group_value_inr = ?,
+             suggested_supplier_ids = ?,
+             policy_version = ?,
+             clause_applied = ?,
+             reason = ?,
+             reference_doc = ?,
+             lines_json = ?
+         WHERE id = ?`
+      ).run(
+        evalItem.requirement.total_quantity,
+        evalItem.requirement.is_emergency ? 1 : 0,
         decisionRow.decision,
         decisionRow.route,
         decisionRow.supplier_id || null,
@@ -249,13 +288,46 @@ export function createChatRouter(db: DatabaseSync): Router {
         decisionRow.group_value_inr,
         decisionRow.suggested_supplier_ids || null,
         decisionRow.policy_version,
-        evalItem?.clause_applied || '1.2',
+        evalItem.clause_applied,
         decisionRow.reason,
-        evalItem?.reference_doc || null,
-        JSON.stringify([prLine])
+        evalItem.reference_doc || null,
+        JSON.stringify(evalItem.requirement.lines),
+        requirementId
       );
-
-    const requirementId = Number(reqInsert.lastInsertRowid);
+    } else {
+      groupId = `GRP-CHAT-${String(chatPrCount + 1).padStart(4, '0')}`;
+      const reqInsert = db
+        .prepare(
+          `INSERT INTO requirements
+           (batch_id, group_id, po_id, resolved_item_code, plant, first_created_at, first_need_by_date,
+            total_quantity, is_emergency, decision, route, supplier_id, unit_price, group_value_inr,
+            suggested_supplier_ids, policy_version, clause_applied, reason, reference_doc, lines_json, status)
+           VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(
+          groupId,
+          evalItem?.po_id ? `PO-CHAT-${String(chatPrCount + 1).padStart(4, '0')}` : null,
+          decisionRow.resolved_item_code,
+          prLine.plant,
+          prLine.created_at,
+          prLine.need_by_date,
+          prLine.quantity,
+          prLine.urgency === 'Emergency' ? 1 : 0,
+          decisionRow.decision,
+          decisionRow.route,
+          decisionRow.supplier_id || null,
+          decisionRow.unit_price || null,
+          decisionRow.group_value_inr,
+          decisionRow.suggested_supplier_ids || null,
+          decisionRow.policy_version,
+          evalItem?.clause_applied || 'ANOMALY',
+          decisionRow.reason,
+          evalItem?.reference_doc || null,
+          JSON.stringify([prLine]),
+          decisionRow.decision === 'NOT_PROCESSED' ? 'FLAGGED_EXCEPTION' : 'PENDING_REVIEW'
+        );
+      requirementId = Number(reqInsert.lastInsertRowid);
+    }
 
     db.prepare("UPDATE chat_sessions SET status = 'CONFIRMED', updated_at = ? WHERE session_id = ?").run(
       nowIso,
@@ -272,6 +344,7 @@ export function createChatRouter(db: DatabaseSync): Router {
       JSON.stringify({
         requirement_id: requirementId,
         group_id: groupId,
+        clubbed_with_existing: clubbedWithExisting,
         resolved_item_code: decisionRow.resolved_item_code,
         quantity: prLine.quantity,
         plant: prLine.plant,
@@ -285,6 +358,7 @@ export function createChatRouter(db: DatabaseSync): Router {
       pr_no: prNo,
       requirement_id: requirementId,
       group_id: groupId,
+      clubbed_with_existing: clubbedWithExisting,
       decision: decisionRow
     });
   });

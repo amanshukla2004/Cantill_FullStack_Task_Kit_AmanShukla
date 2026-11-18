@@ -13,6 +13,6 @@ services:
       - key: DATABASE_PATH
         value: /app/storage/procurement.db
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+        value: openai/gpt-oss-120b
       - key: GROQ_API_KEY
         sync: false

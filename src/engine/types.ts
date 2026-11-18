@@ -77,9 +77,12 @@ export interface ContractLine {
 }
 
 export type ConditionField =
+  | 'item_code'
   | 'item_type'
   | 'category'
   | 'plant'
+  | 'department'
+  | 'uom'
   | 'group_value_inr'
   | 'urgency'
   | 'contract_available'

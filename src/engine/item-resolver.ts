@@ -1,11 +1,18 @@
 import { Item } from './types.js';
 
+export interface CatalogCandidate {
+  item_code: string;
+  description: string;
+  score: number;
+  query_coverage: number;
+}
+
 export interface MatchedItemResult {
   resolved_item_code: string; // 'ITM-XXXX' or 'NEW'
   is_new: boolean;
   match_confidence: number;
   had_text_urgent_tag: boolean;
-  candidates?: Array<{ item_code: string; description: string; score: number }>;
+  candidates?: CatalogCandidate[];
 }
 
 const ABBREVIATION_MAP: Record<string, string[]> = {
@@ -15,6 +22,7 @@ const ABBREVIATION_MAP: Record<string, string[]> = {
   pneu: ['pneumatic'],
   rod: ['electrode'],
   rods: ['electrode'],
+  cyl: ['cylinder'],
   ss: ['ss'],
   ms: ['ms'],
   vci: ['vci'],
@@ -26,7 +34,28 @@ const ABBREVIATION_MAP: Record<string, string[]> = {
   led: ['led']
 };
 
-const STOP_WORDS = new Set(['for', 'the', 'of', 'with', 'and', 'in', 'to', 'a', 'an', 'some', 'please', 'need']);
+const SPELLING_NORMALIZER: Record<string, string> = {
+  center: 'centre',
+  aluminum: 'aluminium',
+  meter: 'metre',
+  liter: 'litre',
+  gray: 'grey'
+};
+
+const STOP_WORDS = new Set([
+  'for',
+  'the',
+  'of',
+  'with',
+  'and',
+  'in',
+  'to',
+  'a',
+  'an',
+  'some',
+  'please',
+  'need'
+]);
 
 const PLURAL_TO_SINGULAR: Record<string, string> = {
   bearings: 'bearing',
@@ -85,7 +114,6 @@ export function stripOperationalNoise(raw: string): {
     .replace(/\s*\bas\s+per\s+sample\b/gi, '')
     .replace(/\s*\(repeat\)/gi, '')
     .replace(/×/g, 'x')
-    // Convert 24" -> 24 inch before stripping quotes
     .replace(/(\d+(?:\.\d+)?)\s*"/g, '$1 inch')
     .replace(/["']/g, '')
     .replace(/\s+/g, ' ')
@@ -95,21 +123,24 @@ export function stripOperationalNoise(raw: string): {
 }
 
 export function normalizeTokens(text: string): string[] {
-  const lower = text
+  let lower = text
     .toLowerCase()
     .replace(/×/g, 'x')
     .replace(/[()[\],;:]/g, ' ')
+    // Split fused stainless/mild steel grades like "ss304" -> "ss 304"
+    .replace(/\b(ss|ms)(\d{2,4})\b/g, '$1 $2')
+    // Normalize spaced number+unit compounds like "30 hp" -> "30hp", "1.5 mm" -> "1.5mm", "100 w" -> "100w"
+    .replace(/\b(\d+(?:\.\d+)?)\s+(hp|kw|w|a|gb|mm|kg|l)\b/g, '$1$2')
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Split on whitespace, keeping hyphenated specs both intact and split for robust matching
   const rawParts = lower.split(/\s+/).filter(Boolean);
   const expanded: string[] = [];
 
-  for (const part of rawParts) {
+  for (const rawPart of rawParts) {
+    const part = SPELLING_NORMALIZER[rawPart] || rawPart;
     if (STOP_WORDS.has(part) || part === '-') continue;
 
-    // Context-aware 'brg': if preceded by 'roller', expand to just ['bearing'] instead of ['ball', 'bearing']
     if (part === 'brg' || part === 'brgs') {
       if (expanded[expanded.length - 1] === 'roller') {
         expanded.push('bearing');
@@ -124,11 +155,11 @@ export function normalizeTokens(text: string): string[] {
       continue;
     }
 
-    // Handle hyphenated codes like "6308-zz" or "6205-2rs" or "b-54" or "l-100"
     if (part.includes('-')) {
       const subParts = part.split('-').filter(Boolean);
       for (const sp of subParts) {
-        expanded.push(PLURAL_TO_SINGULAR[sp] || sp);
+        const normSp = SPELLING_NORMALIZER[sp] || sp;
+        expanded.push(PLURAL_TO_SINGULAR[normSp] || normSp);
       }
     } else {
       expanded.push(PLURAL_TO_SINGULAR[part] || part);
@@ -145,10 +176,11 @@ function extractNumericTokens(tokens: string[]): string[] {
 function hasNumericConflict(qNums: string[], iNums: string[]): boolean {
   if (qNums.length === 0 || iNums.length === 0) return false;
   for (const qn of qNums) {
-    // Allow exact or dimension-token match; reject conflicting model/size numbers (e.g. 6308 vs 6205)
-    const matched = iNums.some(
-      (inm) => inm === qn || inm.replace(/mm|kg|ltr|w|a|v|kw|hp|gb|lph$/i, '') === qn.replace(/mm|kg|ltr|w|a|v|kw|hp|gb|lph$/i, '')
-    );
+    const qBase = qn.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph$/i, '');
+    const matched = iNums.some((inm) => {
+      const iBase = inm.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph$/i, '');
+      return inm === qn || (qBase.length > 0 && iBase === qBase);
+    });
     if (!matched) {
       return true;
     }
@@ -160,14 +192,14 @@ export function findCatalogCandidates(
   rawDescription: string,
   catalog: Map<string, Item>,
   limit = 5
-): Array<{ item_code: string; description: string; score: number }> {
+): CatalogCandidate[] {
   const { cleaned } = stripOperationalNoise(rawDescription);
   const qTokens = normalizeTokens(cleaned);
   if (qTokens.length === 0) return [];
 
   const qSet = new Set(qTokens);
   const qNums = extractNumericTokens(qTokens);
-  const scored: Array<{ item_code: string; description: string; score: number }> = [];
+  const scored: CatalogCandidate[] = [];
 
   for (const [code, item] of catalog.entries()) {
     const iTokens = normalizeTokens(item.description);
@@ -182,14 +214,24 @@ export function findCatalogCandidates(
     }
     if (overlap === 0) continue;
 
-    // Symmetric Jaccard-like + coverage blend
     const maxLen = Math.max(qSet.size, iSet.size);
     const score = overlap / maxLen;
-    scored.push({ item_code: code, description: item.description, score });
+    const query_coverage = overlap / qSet.size;
+    scored.push({
+      item_code: code,
+      description: item.description,
+      score,
+      query_coverage
+    });
   }
 
   return scored
-    .sort((a, b) => b.score - a.score || a.item_code.localeCompare(b.item_code))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.query_coverage - a.query_coverage ||
+        a.item_code.localeCompare(b.item_code)
+    )
     .slice(0, limit);
 }
 
@@ -228,16 +270,26 @@ export function resolveItem(
   }
 
   // Step 3: Normalized token match with strict numeric/part-code preservation
+  const qTokenCount = new Set(normalizeTokens(cleaned)).size;
   const candidates = findCatalogCandidates(cleaned, catalog, 5);
   if (candidates.length > 0) {
     const best = candidates[0];
-    // Require strong token overlap (>= 0.55) to avoid false positives on novel items
-    // (e.g., "Drinking water purifier 50 LPH" or "Ultrasonic thickness gauge" score ~0)
-    if (best.score >= 0.55) {
+    const second = candidates[1];
+
+    const strongOverlap = best.score >= 0.55;
+    // Unambiguous subset match: >=2 query tokens, 100% of query tokens present in item,
+    // and clearly ahead of any runner-up (handles "safety shoes", "a4 paper", "cnc turning center")
+    const unambiguousSubset =
+      qTokenCount >= 2 &&
+      best.query_coverage === 1.0 &&
+      best.score >= 0.4 &&
+      (!second || best.score - second.score >= 0.15 || best.query_coverage - second.query_coverage >= 0.25);
+
+    if (strongOverlap || unambiguousSubset) {
       return {
         resolved_item_code: best.item_code,
         is_new: false,
-        match_confidence: Number(best.score.toFixed(3)),
+        match_confidence: Number(Math.max(best.score, unambiguousSubset ? 0.85 : best.score).toFixed(3)),
         had_text_urgent_tag: hadUrgentTag,
         candidates
       };

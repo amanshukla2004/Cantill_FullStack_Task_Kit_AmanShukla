@@ -8,9 +8,12 @@ import {
 } from './types.js';
 
 export const ConditionFieldSchema = z.enum([
+  'item_code',
   'item_type',
   'category',
   'plant',
+  'department',
+  'uom',
   'group_value_inr',
   'urgency',
   'contract_available',
@@ -70,9 +73,12 @@ export const PolicyRuleSchema = z.object({
 });
 
 export interface EvaluationContext {
+  item_code: string;
   item_type: string;
   category: string;
   plant: string;
+  department: string;
+  uom: string;
   group_value_inr: number;
   urgency: string;
   contract_available: boolean;

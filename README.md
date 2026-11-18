@@ -63,7 +63,7 @@ npm run dev:client   # React dev server on :5173 (proxies /api -> :3000)
 
 ## Automated Verification Suite
 
-Run all **37 automated tests** (covering Phase 0 seeding & PDF ingestion, all **14/14 Worked Examples** on the full 186-line `sample_pr_batch.csv`, all **3/3 Preferred Supplier rankings**, all **39/39 free-text descriptions**, anomalies & duplicate guard, Buyer Workspace approvals/overrides/Clause 5.7 enforcement, Chat Intake happy/vague/unknown flows, and end-to-end zero-code Policy v5.1/v5.2 amendments):
+Run all **42 automated tests** (covering Phase 0 seeding & PDF ingestion, all **14/14 Worked Examples** on the full 186-line `sample_pr_batch.csv`, all **3/3 Preferred Supplier rankings**, all **39/39 free-text descriptions** + **17/17 unseen adversarial descriptions**, anomalies & duplicate guard, Buyer Workspace approvals/overrides/Clause 5.7 enforcement, Chat Intake happy/vague/unknown/multi-PR clubbing flows, and end-to-end zero-code Policy amendments including plant, category, department, item-code, and future-dated effective date guards):
 
 ```bash
 npm test
@@ -101,4 +101,4 @@ See [.env.example](./.env.example):
 - `PORT` (default `3000`)
 - `DATABASE_PATH` (default `./storage/procurement.db`)
 - `GROQ_API_KEY` (optional; enables live Groq AI for Chat Intake & Policy Amendments)
-- `GROQ_MODEL` (default `llama-3.3-70b-versatile`)
+- `GROQ_MODEL` (default `openai/gpt-oss-120b`)

@@ -26,10 +26,14 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [usedAi, setUsedAi] = useState<boolean>(false);
 
-  // Editable JSON override for blind-test precision
+  // Editable JSON & macro override for blind-test precision
   const [editJsonOpen, setEditJsonOpen] = useState(false);
   const [draftEffectiveDate, setDraftEffectiveDate] = useState('');
   const [draftVersion, setDraftVersion] = useState('');
+  const [draftClubDays, setDraftClubDays] = useState(14);
+  const [draftNeedByDays, setDraftNeedByDays] = useState(7);
+  const [draftConsolHours, setDraftConsolHours] = useState(24);
+  const [draftHistoryDays, setDraftHistoryDays] = useState(365);
   const [draftRulesJson, setDraftRulesJson] = useState('');
 
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -60,6 +64,10 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
     setWarnings(warns);
     setDraftVersion(p.version);
     setDraftEffectiveDate(p.effective_date);
+    setDraftClubDays(p.clubbing_creation_window_days);
+    setDraftNeedByDays(p.clubbing_need_by_window_days);
+    setDraftConsolHours(p.po_consolidation_window_hours);
+    setDraftHistoryDays(p.active_history_lookback_days);
     setDraftRulesJson(JSON.stringify(p.rules, null, 2));
     setEditJsonOpen(false);
   };
@@ -114,6 +122,10 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
       const res = await api.updateDraftPolicy(draft.policy_id, {
         version: draftVersion,
         effective_date: draftEffectiveDate,
+        clubbing_creation_window_days: Number(draftClubDays),
+        clubbing_need_by_window_days: Number(draftNeedByDays),
+        po_consolidation_window_hours: Number(draftConsolHours),
+        active_history_lookback_days: Number(draftHistoryDays),
         rules: parsedRules
       });
       setDraft(res.draft_policy);
@@ -371,6 +383,44 @@ export const PolicyStudio: React.FC<Props> = ({ onPolicyActivated }) => {
                       className="input"
                       value={draftEffectiveDate}
                       onChange={(e) => setDraftEffectiveDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11.5, fontWeight: 600 }}>Clubbing Created (d)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      value={draftClubDays}
+                      onChange={(e) => setDraftClubDays(Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, fontWeight: 600 }}>Clubbing Need-by (±d)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      value={draftNeedByDays}
+                      onChange={(e) => setDraftNeedByDays(Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, fontWeight: 600 }}>PO Consolid. (hrs)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      value={draftConsolHours}
+                      onChange={(e) => setDraftConsolHours(Number(e.target.value))}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, fontWeight: 600 }}>History Lookback (d)</label>
+                    <input
+                      type="number"
+                      className="input"
+                      value={draftHistoryDays}
+                      onChange={(e) => setDraftHistoryDays(Number(e.target.value))}
                     />
                   </div>
                 </div>

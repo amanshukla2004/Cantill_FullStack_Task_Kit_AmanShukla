@@ -42,6 +42,7 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
   const [createdPr, setCreatedPr] = useState<{
     pr_no: string;
     group_id: string;
+    clubbed_with_existing?: boolean;
     decision: BatchProcessResponse['decisions'][number];
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +90,7 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
       setCreatedPr({
         pr_no: res.pr_no,
         group_id: res.group_id,
+        clubbed_with_existing: res.clubbed_with_existing,
         decision: res.decision
       });
       onDataChanged();
@@ -122,6 +124,20 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
       onDataChanged();
     } catch (e) {
       setBatchError(e instanceof Error ? e.message : 'Failed to process batch CSV');
+    } finally {
+      setUploadingBatch(false);
+    }
+  };
+
+  const handleRunSampleBatch = async () => {
+    setUploadingBatch(true);
+    setBatchError(null);
+    try {
+      const res = await api.processSampleBatch();
+      setBatchResult(res);
+      onDataChanged();
+    } catch (e) {
+      setBatchError(e instanceof Error ? e.message : 'Failed to process sample batch');
     } finally {
       setUploadingBatch(false);
     }
@@ -266,6 +282,11 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
                   <strong style={{ color: 'var(--primary)', fontSize: 14 }}>
                     {createdPr.pr_no} Created → {createdPr.decision.route}
                   </strong>
+                  {createdPr.clubbed_with_existing && (
+                    <span className="badge badge-emergency" style={{ marginLeft: 8 }}>
+                      Clubbed into {createdPr.group_id} (Clause 2)
+                    </span>
+                  )}
                   <div style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 3 }}>
                     {createdPr.decision.resolved_item_code} · Value{' '}
                     <strong>{formatInr(createdPr.decision.group_value_inr)}</strong> · Policy{' '}
@@ -354,14 +375,23 @@ export const ChatIntake: React.FC<Props> = ({ onNavigateWorkspace, onDataChanged
                 e.target.value = '';
               }}
             />
-            <button
-              className="btn btn-primary"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingBatch}
-            >
-              <Upload size={15} />
-              {uploadingBatch ? 'Processing Batch...' : 'Upload & Process PR Batch CSV'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button
+                className="btn btn-primary"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingBatch}
+              >
+                <Upload size={15} />
+                {uploadingBatch ? 'Processing Batch...' : 'Upload PR Batch CSV'}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={handleRunSampleBatch}
+                disabled={uploadingBatch}
+              >
+                Run Kit Sample Batch (186 PRs)
+              </button>
+            </div>
           </div>
 
           {batchError && <div className="alert alert-error">{batchError}</div>}
