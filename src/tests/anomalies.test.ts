@@ -7,7 +7,8 @@ import {
   openDatabase,
   seedDatabase,
   loadMasterDataSnapshot,
-  resolveKitDataRoot
+  resolveKitDataRoot,
+  getSamplePrBatchPath
 } from '../server/db.js';
 import { parsePrBatchCsv } from '../server/services/csv-utils.js';
 import { runProcurementPipeline } from '../engine/pipeline.js';
@@ -26,10 +27,7 @@ describe('Phase 1: Data Anomalies, Near-Duplicate Guard & Idempotent Reprocessin
 
   it('flags zero quantity, invalid plant, and near-duplicate PRs as NOT_PROCESSED', () => {
     const snap = loadMasterDataSnapshot(db);
-    const batchCsv = fs.readFileSync(
-      path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv'),
-      'utf-8'
-    );
+    const batchCsv = fs.readFileSync(getSamplePrBatchPath(), 'utf-8');
     const prLines = parsePrBatchCsv(batchCsv);
     const res = runProcurementPipeline({
       prLines,
@@ -59,10 +57,7 @@ describe('Phase 1: Data Anomalies, Near-Duplicate Guard & Idempotent Reprocessin
 
   it('produces 100% identical outputs across repeated batch runs (idempotent ceiling reset)', () => {
     const snap = loadMasterDataSnapshot(db);
-    const batchCsv = fs.readFileSync(
-      path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv'),
-      'utf-8'
-    );
+    const batchCsv = fs.readFileSync(getSamplePrBatchPath(), 'utf-8');
     const prLines = parsePrBatchCsv(batchCsv);
 
     const run1 = runProcurementPipeline({ prLines, ...snap });

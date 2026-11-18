@@ -16,6 +16,16 @@ import {
 } from '../engine/types.js';
 import { getBaselinePolicyV5Rules } from '../engine/policy-ast.js';
 import { extractContractFromPdfFile } from './services/pdf-extractor.js';
+import {
+  EMBEDDED_PLANTS,
+  EMBEDDED_ITEMS,
+  EMBEDDED_SUPPLIERS,
+  EMBEDDED_PO_HISTORY,
+  EMBEDDED_CONTRACTS,
+  EMBEDDED_CONTRACT_LINES,
+  EMBEDDED_SAMPLE_PR_BATCH_CSV,
+  EMBEDDED_RC_2026_031_B64
+} from './embedded-seed-data.js';
 
 export interface MasterDataSnapshot {
   plants: Map<string, Plant>;
@@ -37,6 +47,48 @@ export function resolveKitDataRoot(): string {
     return path.join(cwd, 'data');
   }
   return cwd;
+}
+
+export function getSamplePrBatchContent(dataRoot = resolveKitDataRoot()): string {
+  const p1 = path.join(dataRoot, 'pr_batches', 'sample_pr_batch.csv');
+  if (fs.existsSync(p1)) {
+    return fs.readFileSync(p1, 'utf-8');
+  }
+  const p2 = path.join(process.cwd(), 'pr_batches', 'sample_pr_batch.csv');
+  if (fs.existsSync(p2)) {
+    return fs.readFileSync(p2, 'utf-8');
+  }
+  return EMBEDDED_SAMPLE_PR_BATCH_CSV;
+}
+
+export function getSamplePrBatchPath(dataRoot = resolveKitDataRoot()): string {
+  const p1 = path.join(dataRoot, 'pr_batches', 'sample_pr_batch.csv');
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.join(process.cwd(), 'pr_batches', 'sample_pr_batch.csv');
+  if (fs.existsSync(p2)) return p2;
+
+  const tmpDir = path.join(process.cwd(), '.cache');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const tmpPath = path.join(tmpDir, 'sample_pr_batch.csv');
+  if (!fs.existsSync(tmpPath)) {
+    fs.writeFileSync(tmpPath, EMBEDDED_SAMPLE_PR_BATCH_CSV, 'utf-8');
+  }
+  return tmpPath;
+}
+
+export function getTestPdfPath(filename = 'RC-2026-031.pdf', dataRoot = resolveKitDataRoot()): string {
+  const p1 = path.join(dataRoot, 'contracts', 'pdf', filename);
+  if (fs.existsSync(p1)) return p1;
+  const p2 = path.join(process.cwd(), 'contracts', 'pdf', filename);
+  if (fs.existsSync(p2)) return p2;
+
+  const tmpDir = path.join(process.cwd(), '.cache');
+  fs.mkdirSync(tmpDir, { recursive: true });
+  const tmpPath = path.join(tmpDir, filename);
+  if (!fs.existsSync(tmpPath)) {
+    fs.writeFileSync(tmpPath, Buffer.from(EMBEDDED_RC_2026_031_B64, 'base64'));
+  }
+  return tmpPath;
 }
 
 export function openDatabase(dbPath?: string): DatabaseSync {
@@ -324,7 +376,10 @@ export async function seedDatabase(
   policyRules: number;
 }> {
   // 1. Plants
-  const plantRows = readCsvRecords(path.join(dataRoot, 'master_data', 'plants.csv'));
+  const plantsFile = path.join(dataRoot, 'master_data', 'plants.csv');
+  const plantRows = fs.existsSync(plantsFile)
+    ? readCsvRecords(plantsFile)
+    : (EMBEDDED_PLANTS as unknown as Record<string, string>[]);
   const insertPlant = db.prepare(
     'INSERT OR REPLACE INTO plants (code, name) VALUES (?, ?)'
   );
@@ -333,7 +388,10 @@ export async function seedDatabase(
   }
 
   // 2. Items
-  const itemRows = readCsvRecords(path.join(dataRoot, 'master_data', 'item_master.csv'));
+  const itemsFile = path.join(dataRoot, 'master_data', 'item_master.csv');
+  const itemRows = fs.existsSync(itemsFile)
+    ? readCsvRecords(itemsFile)
+    : (EMBEDDED_ITEMS as unknown as Record<string, string>[]);
   const insertItem = db.prepare(
     'INSERT OR REPLACE INTO items (item_code, description, uom, category, item_type, standard_price) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -349,7 +407,10 @@ export async function seedDatabase(
   }
 
   // 3. Suppliers & Categories
-  const supplierRows = readCsvRecords(path.join(dataRoot, 'master_data', 'supplier_master.csv'));
+  const suppliersFile = path.join(dataRoot, 'master_data', 'supplier_master.csv');
+  const supplierRows = fs.existsSync(suppliersFile)
+    ? readCsvRecords(suppliersFile)
+    : (EMBEDDED_SUPPLIERS as unknown as Record<string, string>[]);
   const insertSupplier = db.prepare(
     'INSERT OR REPLACE INTO suppliers (supplier_id, name, city, status, on_time_pct, quality_rating) VALUES (?, ?, ?, ?, ?, ?)'
   );
@@ -375,7 +436,10 @@ export async function seedDatabase(
   }
 
   // 4. PO History
-  const poRows = readCsvRecords(path.join(dataRoot, 'master_data', 'po_history.csv'));
+  const poFile = path.join(dataRoot, 'master_data', 'po_history.csv');
+  const poRows = fs.existsSync(poFile)
+    ? readCsvRecords(poFile)
+    : (EMBEDDED_PO_HISTORY as unknown as Record<string, string>[]);
   const insertPO = db.prepare(
     `INSERT OR REPLACE INTO po_history
      (po_number, po_date, supplier_id, item_code, quantity, uom, unit_price, plant, delivered_on_time)
@@ -397,80 +461,112 @@ export async function seedDatabase(
   }
 
   // 5. Contract Register & Lines
-  const contractRows = readCsvRecords(path.join(dataRoot, 'contracts', 'contract_register.csv'));
+  const contractsFile = path.join(dataRoot, 'contracts', 'contract_register.csv');
   const registerIds = new Set<string>();
   const insertContract = db.prepare(
     `INSERT OR IGNORE INTO contracts
      (contract_id, supplier_id, supplier_name, start_date, end_date, value_cap, initial_consumed_value, current_consumed_value, source)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
-  for (const row of contractRows) {
-    registerIds.add(row.contract_id);
-    const consumed = Number(row.consumed_value);
-    insertContract.run(
-      row.contract_id,
-      row.supplier_id,
-      row.supplier_name,
-      row.start_date,
-      row.end_date,
-      Number(row.value_cap),
-      consumed,
-      consumed,
-      'REGISTER_CSV'
-    );
-  }
-
-  const contractLineRows = readCsvRecords(path.join(dataRoot, 'contracts', 'contract_lines.csv'));
   const insertContractLine = db.prepare(
     `INSERT OR IGNORE INTO contract_lines
      (contract_id, item_code, description, uom, rate)
      VALUES (?, ?, ?, ?, ?)`
   );
-  for (const row of contractLineRows) {
-    insertContractLine.run(
-      row.contract_id,
-      row.item_code,
-      row.description,
-      row.uom,
-      Number(row.rate)
-    );
-  }
 
-  // 6. Auto-ingest post-register signed PDF contracts (Clause 4.4: RC-2026-031, RC-2026-033)
-  const pdfDir = path.join(dataRoot, 'contracts', 'pdf');
-  if (fs.existsSync(pdfDir)) {
-    const pdfFiles = fs
-      .readdirSync(pdfDir)
-      .filter((f) => f.toLowerCase().endsWith('.pdf'))
-      .sort();
+  if (fs.existsSync(contractsFile)) {
+    const contractRows = readCsvRecords(contractsFile);
+    for (const row of contractRows) {
+      registerIds.add(row.contract_id);
+      const consumed = Number(row.consumed_value);
+      insertContract.run(
+        row.contract_id,
+        row.supplier_id,
+        row.supplier_name,
+        row.start_date,
+        row.end_date,
+        Number(row.value_cap),
+        consumed,
+        consumed,
+        'REGISTER_CSV'
+      );
+    }
 
-    for (const pdfFile of pdfFiles) {
-      const baseId = path.basename(pdfFile, '.pdf');
-      if (registerIds.has(baseId)) continue;
-
-      const extracted = await extractContractFromPdfFile(path.join(pdfDir, pdfFile));
-      if (extracted.contract_id && extracted.supplier_id && extracted.start_date && extracted.end_date) {
-        insertContract.run(
-          extracted.contract_id,
-          extracted.supplier_id,
-          extracted.supplier_name,
-          extracted.start_date,
-          extracted.end_date,
-          extracted.value_cap,
-          0,
-          0,
-          'SIGNED_PDF'
+    const linesFile = path.join(dataRoot, 'contracts', 'contract_lines.csv');
+    if (fs.existsSync(linesFile)) {
+      const contractLineRows = readCsvRecords(linesFile);
+      for (const row of contractLineRows) {
+        insertContractLine.run(
+          row.contract_id,
+          row.item_code,
+          row.description,
+          row.uom,
+          Number(row.rate)
         );
-        for (const line of extracted.lines) {
-          insertContractLine.run(
+      }
+    }
+
+    // 6. Auto-ingest post-register signed PDF contracts (Clause 4.4: RC-2026-031, RC-2026-033)
+    const pdfDir = path.join(dataRoot, 'contracts', 'pdf');
+    if (fs.existsSync(pdfDir)) {
+      const pdfFiles = fs
+        .readdirSync(pdfDir)
+        .filter((f) => f.toLowerCase().endsWith('.pdf'))
+        .sort();
+
+      for (const pdfFile of pdfFiles) {
+        const baseId = path.basename(pdfFile, '.pdf');
+        if (registerIds.has(baseId)) continue;
+
+        const extracted = await extractContractFromPdfFile(path.join(pdfDir, pdfFile));
+        if (extracted.contract_id && extracted.supplier_id && extracted.start_date && extracted.end_date) {
+          insertContract.run(
             extracted.contract_id,
-            line.item_code,
-            line.description,
-            line.uom,
-            line.rate
+            extracted.supplier_id,
+            extracted.supplier_name,
+            extracted.start_date,
+            extracted.end_date,
+            extracted.value_cap,
+            0,
+            0,
+            'SIGNED_PDF'
           );
+          for (const line of extracted.lines) {
+            insertContractLine.run(
+              extracted.contract_id,
+              line.item_code,
+              line.description,
+              line.uom,
+              line.rate
+            );
+          }
         }
       }
+    }
+  } else {
+    // Embedded contracts & lines fallback
+    for (const c of EMBEDDED_CONTRACTS) {
+      registerIds.add(c.contract_id);
+      insertContract.run(
+        c.contract_id,
+        c.supplier_id,
+        c.supplier_name,
+        c.start_date,
+        c.end_date,
+        c.value_cap,
+        c.consumed_value,
+        c.consumed_value,
+        c.source
+      );
+    }
+    for (const l of EMBEDDED_CONTRACT_LINES) {
+      insertContractLine.run(
+        l.contract_id,
+        l.item_code,
+        l.description,
+        l.uom,
+        l.rate
+      );
     }
   }
 

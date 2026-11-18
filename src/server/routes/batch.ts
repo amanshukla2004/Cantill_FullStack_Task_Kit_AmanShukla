@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Router } from 'express';
 import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
-import { loadMasterDataSnapshot, resolveKitDataRoot } from '../db.js';
+import { loadMasterDataSnapshot, resolveKitDataRoot, getSamplePrBatchContent } from '../db.js';
 import {
   CsvValidationError,
   parsePrBatchCsv,
@@ -259,12 +259,8 @@ export function createBatchRouter(db: DatabaseSync): Router {
    */
   router.post('/process-sample-batch', (_req, res) => {
     try {
-      const samplePath = path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv');
-      if (!fs.existsSync(samplePath)) {
-        res.status(404).json({ error: 'Sample PR batch CSV not found on server.' });
-        return;
-      }
-      const prLines = parsePrBatchCsv(fs.readFileSync(samplePath, 'utf-8'));
+      const csvContent = getSamplePrBatchContent();
+      const prLines = parsePrBatchCsv(csvContent);
       res.json(executeAndPersistBatch(db, prLines, 'sample_pr_batch.csv'));
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to process sample batch';

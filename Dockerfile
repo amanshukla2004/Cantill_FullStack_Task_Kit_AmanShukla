@@ -10,13 +10,10 @@ RUN npm ci
 COPY client/package*.json ./client/
 RUN npm --prefix client ci
 
-# Copy application source & master kit data
+# Copy application source & config
 COPY tsconfig.json ./
 COPY src ./src
 COPY client ./client
-COPY master_data ./master_data
-COPY contracts ./contracts
-COPY pr_batches ./pr_batches
 
 # Build TypeScript backend + React production bundle into dist/public
 RUN npm run build

@@ -3,7 +3,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { Express } from 'express';
-import { openDatabase, seedDatabase, resolveKitDataRoot } from '../server/db.js';
+import { openDatabase, seedDatabase, resolveKitDataRoot, getSamplePrBatchPath } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { invokeExpress } from './http-helper.js';
 
@@ -156,7 +156,7 @@ describe('Phase 3: Hybrid Chat Intake & Policy-as-Data Amendment Lifecycle (Offl
   });
 
   it('Policy-as-Data Full Run 1 -> Amend -> Review/Edit -> Activate -> Run 2 with ZERO code changes', async () => {
-    const csvPath = path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv');
+    const csvPath = getSamplePrBatchPath();
 
     // Run 1 under baseline Policy v5.0
     const run1 = await invokeExpress(app, {

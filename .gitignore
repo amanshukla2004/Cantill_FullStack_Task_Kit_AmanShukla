@@ -2,6 +2,16 @@
 SOLUTION FOLDER/
 SOLUTION FOLDER 2/
 
+# Task data files (must not be in public repo per submission guidelines)
+master_data/
+contracts/
+pr_batches/
+Cantill_FullStack_Task_Brief.pdf
+Corvo_Procurement_Policy.pdf
+Worked_Examples.pdf
+README.txt
+.cache/
+
 # Dependencies
 node_modules/
 client/node_modules/

@@ -7,7 +7,8 @@ import {
   openDatabase,
   seedDatabase,
   loadMasterDataSnapshot,
-  resolveKitDataRoot
+  resolveKitDataRoot,
+  getSamplePrBatchPath
 } from '../server/db.js';
 import { parsePrBatchCsv } from '../server/services/csv-utils.js';
 import { resolveItem } from '../engine/item-resolver.js';
@@ -26,10 +27,7 @@ describe('Phase 1: Deterministic Item Matching across ALL Free-Text Lines in Sam
 
   it('resolves every single free-text PR line accurately without inventing catalog codes', () => {
     const snap = loadMasterDataSnapshot(db);
-    const batchCsv = fs.readFileSync(
-      path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv'),
-      'utf-8'
-    );
+    const batchCsv = fs.readFileSync(getSamplePrBatchPath(), 'utf-8');
     const lines = parsePrBatchCsv(batchCsv).filter((l) => !l.raw_item_code);
 
     const expected: Record<string, string> = {

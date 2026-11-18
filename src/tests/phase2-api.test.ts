@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parse } from 'csv-parse/sync';
 import { DatabaseSync } from 'node:sqlite';
 import { Express } from 'express';
-import { openDatabase, seedDatabase, resolveKitDataRoot } from '../server/db.js';
+import { openDatabase, seedDatabase, resolveKitDataRoot, getSamplePrBatchPath, getTestPdfPath } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { invokeExpress } from './http-helper.js';
 
@@ -34,7 +34,7 @@ describe('Phase 2: Backend REST API, Contracts PDF Service & Buyer Workspace Int
   });
 
   it('POST /api/process-batch uploads sample_pr_batch.csv and returns 186 decisions', async () => {
-    const csvPath = path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv');
+    const csvPath = getSamplePrBatchPath();
     const res = await invokeExpress(app, {
       method: 'POST',
       url: '/api/process-batch',
@@ -120,7 +120,7 @@ describe('Phase 2: Backend REST API, Contracts PDF Service & Buyer Workspace Int
   });
 
   it('POST /api/contracts/upload-pdf extracts RC-2026-031.pdf and POST /api/contracts persists manual contracts', async () => {
-    const pdfPath = path.join(resolveKitDataRoot(), 'contracts', 'pdf', 'RC-2026-031.pdf');
+    const pdfPath = getTestPdfPath('RC-2026-031.pdf');
     const extractRes = await invokeExpress(app, {
       method: 'POST',
       url: '/api/contracts/upload-pdf',

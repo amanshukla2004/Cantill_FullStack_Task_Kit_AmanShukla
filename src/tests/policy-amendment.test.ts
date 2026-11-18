@@ -7,7 +7,8 @@ import {
   openDatabase,
   seedDatabase,
   loadMasterDataSnapshot,
-  resolveKitDataRoot
+  resolveKitDataRoot,
+  getSamplePrBatchPath
 } from '../server/db.js';
 import { parsePrBatchCsv } from '../server/services/csv-utils.js';
 import { runProcurementPipeline } from '../engine/pipeline.js';
@@ -77,10 +78,7 @@ describe('Phase 1: Zero-Code Policy-as-Data Amendments (Plant Rules, Category Li
       ]
     };
 
-    const batchCsv = fs.readFileSync(
-      path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv'),
-      'utf-8'
-    );
+    const batchCsv = fs.readFileSync(getSamplePrBatchPath(), 'utf-8');
     const prLines = parsePrBatchCsv(batchCsv);
 
     const runV50 = runProcurementPipeline({ prLines, ...snap });
@@ -114,10 +112,7 @@ describe('Phase 1: Zero-Code Policy-as-Data Amendments (Plant Rules, Category Li
       status: 'ACTIVE'
     };
 
-    const batchCsv = fs.readFileSync(
-      path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv'),
-      'utf-8'
-    );
+    const batchCsv = fs.readFileSync(getSamplePrBatchPath(), 'utf-8');
     const prLines = parsePrBatchCsv(batchCsv);
 
     const res = runProcurementPipeline({

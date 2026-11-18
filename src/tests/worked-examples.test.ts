@@ -7,7 +7,8 @@ import {
   openDatabase,
   seedDatabase,
   loadMasterDataSnapshot,
-  resolveKitDataRoot
+  resolveKitDataRoot,
+  getSamplePrBatchPath
 } from '../server/db.js';
 import { parsePrBatchCsv } from '../server/services/csv-utils.js';
 import { runProcurementPipeline, PipelineRunResult } from '../engine/pipeline.js';
@@ -22,10 +23,7 @@ describe('Phase 1: All 14/14 Worked Examples Verified on Full 186-Line Sample Ba
     db = openDatabase(':memory:');
     await seedDatabase(db);
     const snap = loadMasterDataSnapshot(db);
-    const batchCsv = fs.readFileSync(
-      path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv'),
-      'utf-8'
-    );
+    const batchCsv = fs.readFileSync(getSamplePrBatchPath(), 'utf-8');
     const prLines = parsePrBatchCsv(batchCsv);
     result = runProcurementPipeline({
       prLines,

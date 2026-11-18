@@ -7,7 +7,8 @@ import {
   openDatabase,
   seedDatabase,
   loadMasterDataSnapshot,
-  resolveKitDataRoot
+  resolveKitDataRoot,
+  getSamplePrBatchPath
 } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { resolveItem } from '../engine/item-resolver.js';
@@ -172,7 +173,7 @@ describe('Adversarial Hardening Audit: Unseen Items, Future-Dated Macro Windows,
   });
 
   it('POST /api/process-batch accepts non-"file" multipart field names and /api/process-sample-batch works', async () => {
-    const csvPath = path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv');
+    const csvPath = getSamplePrBatchPath();
     const customFieldRes = await invokeExpress(app, {
       method: 'POST',
       url: '/api/process-batch',

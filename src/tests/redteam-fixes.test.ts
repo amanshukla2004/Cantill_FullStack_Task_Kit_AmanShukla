@@ -7,7 +7,8 @@ import {
   openDatabase,
   seedDatabase,
   loadMasterDataSnapshot,
-  resolveKitDataRoot
+  resolveKitDataRoot,
+  getSamplePrBatchPath
 } from '../server/db.js';
 import { createApp } from '../server/app.js';
 import { resolveItem } from '../engine/item-resolver.js';
@@ -288,7 +289,7 @@ describe('Red-Team Regression Verification: All 17 Code Defects Fixed', () => {
       json: { approved_by: 'VP' }
     });
 
-    const csvPath = path.join(resolveKitDataRoot(), 'pr_batches', 'sample_pr_batch.csv');
+    const csvPath = getSamplePrBatchPath();
     const run = await invokeExpress(app, {
       method: 'POST',
       url: '/api/process-batch',
@@ -438,7 +439,7 @@ describe('Red-Team Regression Verification: All 17 Code Defects Fixed', () => {
     assert.equal(badContract.status, 400);
 
     // Bug #18: Non-PDF upload returns 400
-    const csvAsPdf = path.join(resolveKitDataRoot(), 'master_data', 'plants.csv');
+    const csvAsPdf = getSamplePrBatchPath();
     const badPdf = await invokeExpress(app, {
       method: 'POST',
       url: '/api/contracts/upload-pdf',
