@@ -228,6 +228,26 @@ function parseAmendmentDeterministic(
         if (plantMention) extraConds.push({ field: 'plant', op: 'eq', value: plantMention });
         if (matchedCategory) extraConds.push({ field: 'category', op: 'eq', value: matchedCategory });
 
+        // Check existing Clause 5.4 threshold so tightening a plant/category excludes it from Clause 5.4
+        const r54 = draft.rules.find((r) => r.clause_number === '5.4');
+        let baseSpotLimit = 200000;
+        if (r54 && 'all' in r54.conditions && Array.isArray(r54.conditions.all)) {
+          const valCond = r54.conditions.all.find(
+            (c) => 'field' in c && c.field === 'group_value_inr'
+          );
+          if (valCond && 'value' in valCond && typeof valCond.value === 'number') {
+            baseSpotLimit = valCond.value;
+          }
+          if (amt < baseSpotLimit) {
+            if (plantMention) {
+              r54.conditions.all.push({ field: 'plant', op: 'neq', value: plantMention });
+            }
+            if (matchedCategory) {
+              r54.conditions.all.push({ field: 'category', op: 'neq', value: matchedCategory });
+            }
+          }
+        }
+
         const newRule: PolicyRule = {
           clause_number: '5.4a',
           priority_order: 4,
@@ -253,7 +273,11 @@ function parseAmendmentDeterministic(
           r.priority_order = idx + 1;
         });
         draft.plain_language_diff.push(
-          `Added Clause 5.4a: ${plantMention || matchedCategory} Spot PO limit set to ₹${amt.toLocaleString('en-IN')}`
+          `Added Clause 5.4a: ${plantMention || matchedCategory} Spot PO limit set to ₹${amt.toLocaleString('en-IN')}${
+            amt < baseSpotLimit
+              ? ` (and excluded ${plantMention || matchedCategory} from generic Clause 5.4 ₹${baseSpotLimit.toLocaleString('en-IN')} limit)`
+              : ''
+          }`
         );
       } else {
         const r54 = draft.rules.find((r) => r.clause_number === '5.4');

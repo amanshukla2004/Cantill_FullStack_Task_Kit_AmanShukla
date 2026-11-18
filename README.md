@@ -63,7 +63,7 @@ npm run dev:client   # React dev server on :5173 (proxies /api -> :3000)
 
 ## Automated Verification Suite
 
-Run all **43 automated tests** (covering Phase 0 seeding & PDF ingestion, all **14/14 Worked Examples** on the full 186-line `sample_pr_batch.csv`, all **3/3 Preferred Supplier rankings**, all **39/39 free-text descriptions** + **17/17 unseen adversarial descriptions**, anomalies & duplicate guard, Buyer Workspace approvals/overrides/Clause 5.7 enforcement, Chat Intake happy/vague/unknown/greeting/invalid-plant/multi-PR clubbing flows, and end-to-end zero-code Policy amendments including plant, category, department, item-code, and future-dated effective date guards):
+Run all **50 automated tests** (covering Phase 0 seeding & PDF ingestion, all **14/14 Worked Examples** on the full 186-line `sample_pr_batch.csv`, all **3/3 Preferred Supplier rankings**, all **39/39 free-text descriptions** + **27/27 unseen adversarial & spaced-dimension/typo descriptions**, anomalies & duplicate guard, Buyer Workspace approvals/overrides/cross-batch PO isolation/Clause 5.7 enforcement, Chat Intake happy/vague/unknown/multi-turn edit/double-confirm/live clubbing flows, and end-to-end zero-code Policy amendments including rollback isolation, tightened plant/category limits, and per-date mid-batch clubbing & consolidation windows):
 
 ```bash
 npm test

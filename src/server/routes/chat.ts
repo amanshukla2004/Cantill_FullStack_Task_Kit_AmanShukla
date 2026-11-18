@@ -150,6 +150,13 @@ export function createChatRouter(db: DatabaseSync): Router {
       return;
     }
 
+    if (String(sessionRow.status) === 'CONFIRMED') {
+      res.status(409).json({
+        error: 'This chat session has already been confirmed and created as a PR. Start a new chat request to raise another PR.'
+      });
+      return;
+    }
+
     const slots = JSON.parse(String(sessionRow.slots_json)) as ChatSlots;
     const missing = computeMissingSlots(slots);
     if (missing.length > 0) {
@@ -261,10 +268,15 @@ export function createChatRouter(db: DatabaseSync): Router {
       clubbedWithExisting = true;
       requirementId = Number(existingReqRow.id);
       groupId = String(existingReqRow.group_id);
+      const updatedPoId =
+        decisionRow.decision === 'PO'
+          ? (existingReqRow.po_id ? String(existingReqRow.po_id) : `PO-CHAT-${String(chatPrCount + 1).padStart(4, '0')}`)
+          : null;
 
       db.prepare(
         `UPDATE requirements
-         SET total_quantity = ?,
+         SET po_id = ?,
+             total_quantity = ?,
              is_emergency = ?,
              decision = ?,
              route = ?,
@@ -279,6 +291,7 @@ export function createChatRouter(db: DatabaseSync): Router {
              lines_json = ?
          WHERE id = ?`
       ).run(
+        updatedPoId,
         evalItem.requirement.total_quantity,
         evalItem.requirement.is_emergency ? 1 : 0,
         decisionRow.decision,

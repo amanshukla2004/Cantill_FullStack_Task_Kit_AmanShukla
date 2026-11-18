@@ -1,5 +1,5 @@
 import { DecisionOutput, Item, PRLine, Plant } from './types.js';
-import { minutesDiff, parseUtcTimestampMs } from './date-utils.js';
+import { extractDateOnly, minutesDiff, parseUtcTimestampMs } from './date-utils.js';
 import { resolveItem } from './item-resolver.js';
 
 export interface AnomalyCheckResult {
@@ -13,8 +13,13 @@ export function filterAnomaliesAndResolveItems(
   prLines: PRLine[],
   plants: Map<string, Plant>,
   items: Map<string, Item>,
-  defaultPolicyVersion: string
+  policyVersionForDate: string | ((dateStr: string) => string)
 ): AnomalyCheckResult {
+  const getVer = (createdAt: string) =>
+    typeof policyVersionForDate === 'function'
+      ? policyVersionForDate(extractDateOnly(createdAt))
+      : policyVersionForDate;
+
   const validLines: PRLine[] = [];
   const anomalyOutputs: DecisionOutput[] = [];
 
@@ -29,6 +34,7 @@ export function filterAnomaliesAndResolveItems(
 
   for (const rawLine of ordered) {
     const line: PRLine = { ...rawLine };
+    const linePolicyVer = getVer(line.created_at);
 
     // Resolve item first so anomaly rows also carry accurate item code when possible
     const match = resolveItem(line.raw_item_code, line.description, items);
@@ -51,7 +57,7 @@ export function filterAnomaliesAndResolveItems(
         unit_price: '',
         group_value_inr: 0,
         suggested_supplier_ids: '',
-        policy_version: defaultPolicyVersion,
+        policy_version: linePolicyVer,
         reason: `Zero or invalid quantity (${line.quantity}); line cannot be commercially fulfilled (see DECISIONS.md 1.1)`
       });
       continue;
@@ -72,13 +78,13 @@ export function filterAnomaliesAndResolveItems(
         unit_price: '',
         group_value_inr: 0,
         suggested_supplier_ids: '',
-        policy_version: defaultPolicyVersion,
+        policy_version: linePolicyVer,
         reason: `Invalid delivery plant '${line.plant}'; valid plants are ${validPlantList} (see DECISIONS.md 1.2)`
       });
       continue;
     }
 
-    // 3. Near-duplicate PR guard (DECISIONS.md 1.13):
+    // 3. Near-duplicate PR guard (DECISIONS.md 1.3):
     // Same requester, resolved item, plant, quantity, and need_by_date raised within 15 minutes
     const dupOf = validLines.find(
       (prev) =>
@@ -105,8 +111,8 @@ export function filterAnomaliesAndResolveItems(
         unit_price: '',
         group_value_inr: 0,
         suggested_supplier_ids: '',
-        policy_version: defaultPolicyVersion,
-        reason: `Suspected duplicate of ${dupOf.pr_no}/${dupOf.pr_line} raised ${elapsed} min earlier by ${line.requester} for identical item, plant, quantity, and need-by date (see DECISIONS.md 1.13)`
+        policy_version: linePolicyVer,
+        reason: `Suspected duplicate of ${dupOf.pr_no}/${dupOf.pr_line} raised ${elapsed} min earlier by ${line.requester} for identical item, plant, quantity, and need-by date (see DECISIONS.md 1.3)`
       });
       continue;
     }

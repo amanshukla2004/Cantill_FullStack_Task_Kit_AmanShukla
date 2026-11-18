@@ -752,9 +752,10 @@ export const BuyerWorkspace: React.FC<Props> = ({ initialBatchId, masterData, re
 
               {overrideDecision === 'PO' && (
                 <div style={{ marginBottom: 12 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600 }}>Active Supplier (Clause 5.7 Enforced)</label>
+                  <label style={{ fontSize: 12, fontWeight: 600 }}>Active Supplier (Clause 5.7 Enforced) *</label>
                   <select
                     className="select"
+                    required
                     value={overrideSupplier}
                     onChange={(e) => setOverrideSupplier(e.target.value)}
                   >

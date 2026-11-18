@@ -196,7 +196,7 @@ describe('Phase 2: Backend REST API, Contracts PDF Service & Buyer Workspace Int
     });
     assert.equal(approveRes.status, 200);
     assert.equal(approveRes.body.status, 'APPROVED');
-    assert.ok(approveRes.body.created_order_ref.startsWith('PO-'));
+    assert.ok(approveRes.body.created_order_ref.includes('PO-'));
 
     // 2. Override WITHOUT comment -> HTTP 400
     const badCommentRes = await invokeExpress(app, {

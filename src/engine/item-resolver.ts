@@ -123,14 +123,22 @@ export function stripOperationalNoise(raw: string): {
 }
 
 export function normalizeTokens(text: string): string[] {
-  let lower = text
+  const lower = text
     .toLowerCase()
     .replace(/×/g, 'x')
     .replace(/[()[\],;:]/g, ' ')
+    // Collapse spaced dimensions: "m10 x 40" -> "m10x40", "45 x 62 x 8" -> "45x62x8", "1250 x 2500" -> "1250x2500"
+    .replace(
+      /\b([a-z]?\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)(?:\s*x\s*(\d+(?:\.\d+)?))?\b/gi,
+      (_, a: string, b: string, c?: string) => (c ? `${a}x${b}x${c}` : `${a}x${b}`)
+    )
     // Split fused stainless/mild steel grades like "ss304" -> "ss 304"
     .replace(/\b(ss|ms)(\d{2,4})\b/g, '$1 $2')
-    // Normalize spaced number+unit compounds like "30 hp" -> "30hp", "1.5 mm" -> "1.5mm", "100 w" -> "100w"
-    .replace(/\b(\d+(?:\.\d+)?)\s+(hp|kw|w|a|gb|mm|kg|l)\b/g, '$1$2')
+    // Normalize spaced number+unit compounds: "30 hp" -> "30hp", "75 gsm" -> "75gsm", "1.5 mm" -> "1.5mm"
+    .replace(
+      /\b(\d+(?:\.\d+)?)\s+(hp|kw|w|a|gb|mm|kg|l|gsm|lph|cum|ply|ton|sqmm|micron)\b/g,
+      '$1$2'
+    )
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -176,9 +184,9 @@ function extractNumericTokens(tokens: string[]): string[] {
 function hasNumericConflict(qNums: string[], iNums: string[]): boolean {
   if (qNums.length === 0 || iNums.length === 0) return false;
   for (const qn of qNums) {
-    const qBase = qn.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph$/i, '');
+    const qBase = qn.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph|gsm|cum|ply|ton|sqmm|micron$/i, '');
     const matched = iNums.some((inm) => {
-      const iBase = inm.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph$/i, '');
+      const iBase = inm.replace(/mm|kg|ltr|l|w|a|v|kw|hp|gb|lph|gsm|cum|ply|ton|sqmm|micron$/i, '');
       return inm === qn || (qBase.length > 0 && iBase === qBase);
     });
     if (!matched) {
@@ -186,6 +194,38 @@ function hasNumericConflict(qNums: string[], iNums: string[]): boolean {
     }
   }
   return false;
+}
+
+/**
+ * Bounded Levenshtein distance <= 1 for pure alphabetic words of length >= 5
+ * (handles minor human typos like "nitrile glovs" or "ball bearning", never touches part numbers).
+ */
+function isAlphaTypoMatch(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (a.length < 5 || b.length < 5) return false;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  if (!/^[a-z]+$/.test(a) || !/^[a-z]+$/.test(b)) return false;
+
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+    } else {
+      edits++;
+      if (edits > 1) return false;
+      if (a.length > b.length) i++;
+      else if (b.length > a.length) j++;
+      else {
+        i++;
+        j++;
+      }
+    }
+  }
+  if (i < a.length || j < b.length) edits++;
+  return edits <= 1;
 }
 
 export function findCatalogCandidates(
@@ -210,7 +250,16 @@ export function findCatalogCandidates(
 
     let overlap = 0;
     for (const qt of qSet) {
-      if (iSet.has(qt)) overlap++;
+      if (iSet.has(qt)) {
+        overlap++;
+      } else {
+        for (const it of iSet) {
+          if (isAlphaTypoMatch(qt, it)) {
+            overlap++;
+            break;
+          }
+        }
+      }
     }
     if (overlap === 0) continue;
 

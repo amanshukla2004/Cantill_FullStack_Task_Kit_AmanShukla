@@ -2,13 +2,47 @@ import { parse } from 'csv-parse/sync';
 import { stringify } from 'csv-stringify/sync';
 import { DecisionOutput, PRLine, Urgency } from '../../engine/types.js';
 
+export class CsvValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CsvValidationError';
+  }
+}
+
+const REQUIRED_PR_COLUMNS = [
+  'pr_no',
+  'created_at',
+  'plant',
+  'description',
+  'quantity',
+  'need_by_date'
+];
+
 export function parsePrBatchCsv(csvContent: string): PRLine[] {
-  const rows = parse(csvContent, {
-    columns: true,
-    skip_empty_lines: true,
-    trim: true,
-    bom: true
-  }) as Record<string, string>[];
+  let rows: Record<string, string>[];
+  try {
+    rows = parse(csvContent, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      bom: true
+    }) as Record<string, string>[];
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Malformed CSV syntax';
+    throw new CsvValidationError(`Invalid CSV format: ${msg}`);
+  }
+
+  if (rows.length === 0) {
+    throw new CsvValidationError('CSV file contains no PR rows.');
+  }
+
+  const headers = Object.keys(rows[0]);
+  const missingCols = REQUIRED_PR_COLUMNS.filter((col) => !headers.includes(col));
+  if (missingCols.length > 0) {
+    throw new CsvValidationError(
+      `Invalid PR batch CSV — missing required column(s): ${missingCols.join(', ')}.`
+    );
+  }
 
   return rows.map((r) => {
     const rawEst = r.estimated_unit_price?.trim();

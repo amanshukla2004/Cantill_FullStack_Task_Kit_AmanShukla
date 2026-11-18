@@ -4,7 +4,11 @@ import { Router } from 'express';
 import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 import { loadMasterDataSnapshot, resolveKitDataRoot } from '../db.js';
-import { parsePrBatchCsv, serializeDecisionsCsv } from '../services/csv-utils.js';
+import {
+  CsvValidationError,
+  parsePrBatchCsv,
+  serializeDecisionsCsv
+} from '../services/csv-utils.js';
 import { runProcurementPipeline } from '../../engine/pipeline.js';
 import { PRLine } from '../../engine/types.js';
 
@@ -240,6 +244,10 @@ export function createBatchRouter(db: DatabaseSync): Router {
 
       res.json(executeAndPersistBatch(db, prLines, filename));
     } catch (err) {
+      if (err instanceof CsvValidationError) {
+        res.status(400).json({ error: err.message });
+        return;
+      }
       const message = err instanceof Error ? err.message : 'Failed to process batch';
       res.status(500).json({ error: message });
     }

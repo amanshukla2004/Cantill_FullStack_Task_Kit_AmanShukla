@@ -19,18 +19,38 @@ export function formatPolicyVersion(version: string): string {
 
 /**
  * Resolve the applicable approved policy version as of a requirement's creation date.
- * Supports mid-batch effective dates cleanly.
+ * - Supports mid-batch effective dates cleanly (ACTIVE policy + earlier historical SUPERSEDED ancestors).
+ * - Excludes rolled-back SUPERSEDED policies (any SUPERSEDED version created after or effective on/after the current ACTIVE policy).
  */
 export function resolvePolicyForDate(policies: Policy[], reqDate: string): Policy {
-  const approved = policies
-    .filter((p) => p.status === 'ACTIVE' || p.status === 'SUPERSEDED')
-    .sort((a, b) => b.effective_date.localeCompare(a.effective_date) || b.policy_id - a.policy_id);
+  const activePolicy = policies
+    .filter((p) => p.status === 'ACTIVE')
+    .sort((a, b) => b.effective_date.localeCompare(a.effective_date) || b.policy_id - a.policy_id)[0];
 
-  const matching = approved.find((p) => p.effective_date <= reqDate);
+  const eligible: Policy[] = [];
+  if (activePolicy) {
+    eligible.push(activePolicy);
+    for (const p of policies) {
+      if (
+        p.status === 'SUPERSEDED' &&
+        p.policy_id < activePolicy.policy_id &&
+        p.effective_date < activePolicy.effective_date
+      ) {
+        eligible.push(p);
+      }
+    }
+  } else {
+    eligible.push(...policies.filter((p) => p.status === 'SUPERSEDED'));
+  }
+
+  eligible.sort(
+    (a, b) => b.effective_date.localeCompare(a.effective_date) || b.policy_id - a.policy_id
+  );
+
+  const matching = eligible.find((p) => p.effective_date <= reqDate);
   if (matching) return matching;
 
-  // Fallback to earliest approved or first available policy
-  return approved[approved.length - 1] || policies[0];
+  return eligible[eligible.length - 1] || policies[0];
 }
 
 export function hasActiveSupplierHistory(
@@ -89,7 +109,8 @@ export function evaluateWaterfall(
     plant: req.plant,
     department: req.lines[0]?.department || '',
     uom: item.uom,
-    group_value_inr: valuation.group_value_inr,
+    // Evaluate thresholds against exact 2-decimal valuation to prevent rounding boundary flips
+    group_value_inr: valuation.exact_value_inr,
     urgency: req.is_emergency ? 'Emergency' : 'Normal',
     contract_available: valuation.contract_used !== null,
     has_active_365d_history: hasActiveHistory && preferredList.length > 0,
@@ -113,6 +134,7 @@ export function evaluateWaterfall(
         requirement: req,
         policy_version: verLabel,
         clause_applied: rule.clause_number,
+        supplier_strategy: rule.supplier_strategy,
         decision: rule.outcome,
         route: rule.route,
         supplier_id: c.supplier_id,
@@ -133,6 +155,7 @@ export function evaluateWaterfall(
         requirement: req,
         policy_version: verLabel,
         clause_applied: rule.clause_number,
+        supplier_strategy: rule.supplier_strategy,
         decision: rule.outcome,
         route: rule.route,
         supplier_id: topSupplier.supplier_id,
@@ -154,6 +177,7 @@ export function evaluateWaterfall(
       requirement: req,
       policy_version: verLabel,
       clause_applied: rule.clause_number,
+      supplier_strategy: rule.supplier_strategy,
       decision: rule.outcome,
       route: rule.route,
       supplier_id: '',
@@ -171,6 +195,7 @@ export function evaluateWaterfall(
     requirement: req,
     policy_version: verLabel,
     clause_applied: 'FALLBACK',
+    supplier_strategy: 'SUGGEST_SUPPLIERS',
     decision: 'SOURCING_REQUEST',
     route: 'RFQ',
     supplier_id: '',

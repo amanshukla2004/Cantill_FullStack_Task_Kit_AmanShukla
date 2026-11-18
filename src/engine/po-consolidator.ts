@@ -1,5 +1,5 @@
 import { EvaluatedRequirement } from './types.js';
-import { hoursDiff, parseUtcTimestampMs } from './date-utils.js';
+import { extractDateOnly, hoursDiff, parseUtcTimestampMs } from './date-utils.js';
 
 export interface ConsolidatedPOGroup {
   po_id: string;
@@ -10,17 +10,21 @@ export interface ConsolidatedPOGroup {
   requirement_group_ids: string[];
 }
 
+export type ConsolidationWindowResolver = (reqDate: string) => number;
+
 /**
  * Policy Section 7: Placing purchase orders (consolidation).
  * - Only requirements ending in decision === 'PO' are consolidated.
  * - Evaluated in chronological order of requirement creation time (first_created_at ASC, group_id ASC).
  * - Joins earliest open PO with same supplier, plant, route where
- *   hoursDiff(po.first_req_created_at, req.first_created_at) <= consolidationWindowHours.
+ *   hoursDiff(po.first_req_created_at, req.first_created_at) <= consolidationWindowHours
+ *   (resolved per requirement's effective policy date when mid-batch policies exist).
  * - Sourcing requests are never combined.
  */
 export function consolidatePurchaseOrders(
   evaluated: EvaluatedRequirement[],
-  consolidationWindowHours = 24
+  consolidationWindowHours = 24,
+  windowResolver?: ConsolidationWindowResolver
 ): {
   reqToPoId: Map<string, string>;
   poGroups: ConsolidatedPOGroup[];
@@ -42,6 +46,9 @@ export function consolidatePurchaseOrders(
 
   for (const item of poCandidates) {
     const req = item.requirement;
+    const reqWindowHours = windowResolver
+      ? windowResolver(extractDateOnly(req.first_created_at))
+      : consolidationWindowHours;
     let matchedPO: ConsolidatedPOGroup | null = null;
 
     for (const po of poGroups) {
@@ -51,7 +58,7 @@ export function consolidatePurchaseOrders(
         po.route === item.route
       ) {
         const diffHrs = hoursDiff(po.first_req_created_at, req.first_created_at);
-        if (diffHrs >= 0 && diffHrs <= consolidationWindowHours) {
+        if (diffHrs >= 0 && diffHrs <= reqWindowHours) {
           matchedPO = po;
           break; // Clause 7.2: joins earliest qualifying open PO
         }

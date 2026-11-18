@@ -58,12 +58,12 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
     batchDates[batchDates.length - 1] || new Date().toISOString().slice(0, 10);
   const primaryPolicy = resolvePolicyForDate(policies, maxBatchDate);
 
-  // Step 1: Anomaly validation, duplicate guard & deterministic item resolution
+  // Step 1: Anomaly validation, duplicate guard & deterministic item resolution (per-line policy version)
   const { validLines, anomalyOutputs } = filterAnomaliesAndResolveItems(
     prLines,
     plants,
     items,
-    formatPolicyVersion(primaryPolicy.version)
+    (dateStr) => formatPolicyVersion(resolvePolicyForDate(policies, dateStr).version)
   );
 
   // Step 2: Anti-splitting clubbing (Clause 2) with per-line effective-date window resolution
@@ -101,6 +101,7 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
         requirement: req,
         policy_version: verLabel,
         clause_applied: '1.2',
+        supplier_strategy: 'NONE',
         decision: 'SOURCING_REQUEST',
         route: 'NEW_ITEM_SOURCING',
         supplier_id: '',
@@ -138,9 +139,8 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
       contractLines
     );
 
-    // Consume contract ceiling ONLY when a Contract PO is actually awarded (Rule 5.2 / CONTRACT_PO)
-    // (For example, Capex items checked at Rule 5.1 do NOT consume contract ceiling)
-    if (decisionResult.route === 'CONTRACT_PO' && valuation.contract_used) {
+    // Consume contract ceiling whenever a CONTRACT_HOLDER rule actually awards the contract
+    if (decisionResult.supplier_strategy === 'CONTRACT_HOLDER' && valuation.contract_used) {
       valuation.contract_used.current_consumed_value = Number(
         (valuation.contract_used.current_consumed_value + valuation.exact_value_inr).toFixed(2)
       );
@@ -149,10 +149,11 @@ export function runProcurementPipeline(input: PipelineInput): PipelineRunResult 
     evaluatedReqs.push(decisionResult);
   }
 
-  // Step 4: PO Consolidation (Section 7)
+  // Step 4: PO Consolidation (Section 7) with per-requirement effective-date window resolution
   const { reqToPoId, poGroups } = consolidatePurchaseOrders(
     evaluatedReqs,
-    primaryPolicy.po_consolidation_window_hours
+    primaryPolicy.po_consolidation_window_hours,
+    (reqDate) => resolvePolicyForDate(policies, reqDate).po_consolidation_window_hours
   );
 
   const evaluatedWithPO = evaluatedReqs.map((e) => ({

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { DatabaseSync } from 'node:sqlite';
 import { loadMasterDataSnapshot } from '../db.js';
 import { rankPreferredSuppliers } from '../../engine/preferred-suppliers.js';
+import { resolvePolicyForDate } from '../../engine/waterfall-evaluator.js';
 import { extractDateOnly } from '../../engine/date-utils.js';
 
 const ApproveSchema = z.object({
@@ -25,7 +26,6 @@ export function createWorkspaceRouter(db: DatabaseSync): Router {
    */
   router.get('/requirements', (req, res) => {
     const snap = loadMasterDataSnapshot(db);
-    const activePolicy = snap.policies.find((p) => p.status === 'ACTIVE') || snap.policies[0];
 
     let batchId = req.query.batch_id ? Number(req.query.batch_id) : null;
     if (!batchId && req.query.all !== 'true') {
@@ -74,6 +74,7 @@ export function createWorkspaceRouter(db: DatabaseSync): Router {
       const supplierId = r.supplier_id ? String(r.supplier_id) : '';
       const supplier = supplierId ? snap.suppliers.get(supplierId) : null;
       const reqDate = extractDateOnly(String(r.first_created_at));
+      const reqPolicy = resolvePolicyForDate(snap.policies, reqDate);
 
       const psl =
         itemCode !== 'NEW' && item
@@ -85,9 +86,9 @@ export function createWorkspaceRouter(db: DatabaseSync): Router {
               snap.contracts,
               snap.contractLines,
               {
-                lookbackDays: activePolicy?.psl_lookback_days ?? 548,
-                recencyHighDays: activePolicy?.psl_recency_high_days ?? 90,
-                recencyMedDays: activePolicy?.psl_recency_med_days ?? 365
+                lookbackDays: reqPolicy?.psl_lookback_days ?? 548,
+                recencyHighDays: reqPolicy?.psl_recency_high_days ?? 90,
+                recencyMedDays: reqPolicy?.psl_recency_med_days ?? 365
               }
             ).slice(0, 5)
           : [];
@@ -186,7 +187,9 @@ export function createWorkspaceRouter(db: DatabaseSync): Router {
     let createdOrderRef = '';
 
     if (decision === 'PO') {
-      const poRef = row.po_id ? String(row.po_id) : `PO-LIVE-${id}`;
+      const basePoId = row.po_id ? String(row.po_id) : `PO-LIVE-${id}`;
+      // Namespace persisted PO ref by batch so Batch 1's PO-0001 never collides with Batch 2's PO-0001
+      const poRef = row.batch_id !== null ? `B${row.batch_id}-${basePoId}` : basePoId;
       createdOrderRef = poRef;
       const existingPO = db
         .prepare('SELECT * FROM purchase_orders WHERE po_ref = ?')
@@ -300,13 +303,22 @@ export function createWorkspaceRouter(db: DatabaseSync): Router {
     }
 
     const { actor, comment, override_decision, override_route, override_supplier_id } = parsed.data;
+    const effectiveSupplierId =
+      override_supplier_id?.trim().toUpperCase() || String(row.supplier_id || '').trim().toUpperCase();
 
-    // Enforce Clause 5.7 even on manual overrides: never award to Blocked/Inactive suppliers
-    if (override_supplier_id) {
+    // Enforce Clause 5.7 & require a valid Active supplier when overriding to a PO
+    if (override_decision === 'PO' && !effectiveSupplierId) {
+      res.status(400).json({
+        error: 'Overriding to a PO requires selecting an Active supplier.'
+      });
+      return;
+    }
+
+    if (effectiveSupplierId && (override_supplier_id || override_decision === 'PO')) {
       const snap = loadMasterDataSnapshot(db);
-      const supp = snap.suppliers.get(override_supplier_id.toUpperCase());
+      const supp = snap.suppliers.get(effectiveSupplierId);
       if (!supp) {
-        res.status(400).json({ error: `Supplier '${override_supplier_id}' not found.` });
+        res.status(400).json({ error: `Supplier '${effectiveSupplierId}' not found.` });
         return;
       }
       if (supp.status !== 'Active') {
@@ -328,7 +340,7 @@ export function createWorkspaceRouter(db: DatabaseSync): Router {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         createdOrderRef,
-        override_supplier_id?.toUpperCase() || String(row.supplier_id || ''),
+        effectiveSupplierId,
         String(row.plant),
         override_route,
         Number(row.group_value_inr),

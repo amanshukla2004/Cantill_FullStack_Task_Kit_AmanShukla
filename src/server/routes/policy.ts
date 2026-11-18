@@ -151,7 +151,7 @@ export function createPolicyRouter(db: DatabaseSync): Router {
         `INSERT INTO audit_logs (entity_type, entity_id, action, actor, timestamp, details_json)
          VALUES ('POLICY', ?, 'DRAFT_CREATED', ?, ?, ?)`
       ).run(
-        `v${draft.new_version}`,
+        `v${cleanVersion}`,
         actor,
         nowIso,
         JSON.stringify({

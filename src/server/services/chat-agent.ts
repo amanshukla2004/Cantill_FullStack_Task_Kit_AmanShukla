@@ -103,6 +103,14 @@ export function resolveRelativeDate(text: string, referenceDateIso: string): str
     return `${yyyy}-${mm}-${dd}`;
   }
 
+  const monDay = lower.match(/\b(jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+(\d{1,2})(?:(?:,)?\s+(\d{4}))?\b/);
+  if (monDay) {
+    const mm = months[monDay[1]];
+    const dd = monDay[2].padStart(2, '0');
+    const yyyy = monDay[3] || String(refParts[0]);
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   if (/\btomorrow\b/.test(lower)) {
     const d = new Date(baseDate.getTime() + 86_400_000);
     return d.toISOString().slice(0, 10);
@@ -157,7 +165,7 @@ function normalizePlant(raw: string | null | undefined, plants: Map<string, Plan
  * Deterministic regex/heuristic slot extractor (used when GROQ_API_KEY is absent or as safety net).
  */
 const GREETING_OR_CHITCHAT =
-  /^(hi|hello|hey|hii+|good\s*(morning|afternoon|evening)|help|start|menu|thanks?|thank\s+you|ok|okay|sure|namaste|how\s+are\s+you|what\s+can\s+you\s+do)[!?.]*$/i;
+  /^(?:hi+|hello|hey)(?:\s+there|\s+bot|\s+assistant)?[!?.]*$|^(?:good\s*(?:morning|afternoon|evening)(?:\s+\w+)?|help|start|menu|thanks?|thank\s+you|ok|okay|sure|namaste|how\s+are\s+you|what\s+can\s+you\s+do)[!?.]*$/i;
 
 function extractSlotsDeterministic(
   message: string,
@@ -197,10 +205,13 @@ function extractSlotsDeterministic(
     }
   }
 
-  // Detect invalid non-positive quantities explicitly
-  const nonPosQty = trimmed.match(/\b(?:need|want|order|qty|quantity)\s+(-?\d+)\b/i);
-  if (nonPosQty && Number(nonPosQty[1]) <= 0) {
-    out.validation_note = `Note: Quantity must be greater than 0 (received ${nonPosQty[1]}).`;
+  // Detect invalid non-positive quantities explicitly (both inline and standalone like "-50" or "0")
+  const standaloneNonPos = trimmed.match(/^\s*(-?\d+(?:\.\d+)?)\s*$/);
+  const inlineNonPos = trimmed.match(/\b(?:need|want|order|qty|quantity|change(?:\s+qty|\s+quantity)?|make\s+it)\s+(?:to\s+)?(-?\d+(?:\.\d+)?)\b/i);
+  if (standaloneNonPos && Number(standaloneNonPos[1]) <= 0) {
+    out.validation_note = `Note: Quantity must be greater than 0 (received ${standaloneNonPos[1]}).`;
+  } else if (inlineNonPos && Number(inlineNonPos[1]) <= 0) {
+    out.validation_note = `Note: Quantity must be greater than 0 (received ${inlineNonPos[1]}).`;
   }
 
   // Urgency detection
@@ -216,8 +227,8 @@ function extractSlotsDeterministic(
 
   // Price detection (INR / Rs / ₹ / "estimated price 5000" / "price is 5000")
   const priceMatch =
-    trimmed.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d+)?)/i) ||
-    trimmed.match(/(?:estimate(?:d)?|price|cost|rate)\s*(?:is|of|around|approx\.?|:)?\s*([\d,]+(?:\.\d+)?)/i);
+    trimmed.match(/(?:₹|\brs\.?|\binr)\s*(\d[\d,]*(?:\.\d+)?)/i) ||
+    trimmed.match(/(?:estimate(?:d)?|price|cost|rate)\s*(?:is|of|around|approx\.?|:)?\s*(\d[\d,]*(?:\.\d+)?)/i);
   if (priceMatch) {
     const val = Number(priceMatch[1].replace(/,/g, ''));
     if (Number.isFinite(val) && val > 0) out.estimated_unit_price = val;
@@ -231,13 +242,19 @@ function extractSlotsDeterministic(
     if (Number.isFinite(val) && val > 0) out.estimated_unit_price = val;
   }
 
-  // Quantity detection
-  if (currentSlots.quantity === null && /^\s*(\d+(?:\.\d+)?)\s*(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)?\s*$/i.test(trimmed)) {
+  // Quantity detection (supports initial requests AND multi-turn edits like "actually change qty to 500" / "make it 300")
+  if (
+    currentSlots.quantity === null &&
+    /^\s*(\d+(?:\.\d+)?)\s*(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)?\s*$/i.test(trimmed)
+  ) {
     const q = Number(trimmed.match(/\d+(?:\.\d+)?/)![0]);
     if (q > 0) out.quantity = q;
   } else {
     const qtyMatch =
-      trimmed.match(/\b(?:need|want|order|buy|request|qty|quantity)\s+(?:about\s+)?(\d+(?:\.\d+)?)\b/i) ||
+      trimmed.match(
+        /\b(?:change(?:\s+(?:the\s+)?(?:qty|quantity))?|update(?:\s+(?:the\s+)?(?:qty|quantity))?|set(?:\s+(?:the\s+)?(?:qty|quantity))?|make\s+it|qty|quantity)\s+(?:to\s+|=\s*)?(\d+(?:\.\d+)?)\b/i
+      ) ||
+      trimmed.match(/\b(?:need|want|order|buy|request)\s+(?:about\s+)?(\d+(?:\.\d+)?)\b/i) ||
       trimmed.match(/\b(\d+(?:\.\d+)?)\s+(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)\b/i);
     if (qtyMatch) {
       const q = Number(qtyMatch[1]);
@@ -248,24 +265,29 @@ function extractSlotsDeterministic(
   // Item query extraction if item not yet matched and message looks like an item request
   if (!out.explicit_item_code && !out.confirm_new_item && currentSlots.item_match_status !== 'MATCHED') {
     const isShortSlotAnswer =
-      /^(normal|emergency|pun1|chk1|bhosari|chakan|yes|no|confirm|\d+(?:\.\d+)?)$/i.test(trimmed) ||
+      /^(normal|emergency|pun1|chk1|bhosari|chakan|yes|no|confirm|-?\d+(?:\.\d+)?)$/i.test(trimmed) ||
       (out.need_by_date !== undefined && trimmed.split(/\s+/).length <= 3) ||
-      (out.estimated_unit_price !== undefined && trimmed.split(/\s+/).length <= 4);
+      (out.estimated_unit_price !== undefined && trimmed.split(/\s+/).length <= 4) ||
+      Boolean(standaloneNonPos);
 
     if (!isShortSlotAnswer) {
-      let cleaned = trimmed
+      const cleaned = trimmed
         .replace(/^(?:i\s+)?(?:need|want|require|please\s+order|order|buy|raise\s+a?\s*pr\s+for)\s+/i, '')
-        .replace(/\b\d+(?:\.\d+)?\s+(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)\s+(?:of\s+)?/i, '')
-        .replace(/^\d+(?:\.\d+)?\s+/, '')
-        .replace(/\b(?:for|at|to)\s+(?:chakan|bhosari|chk1|pun1)(?:\s+plant)?\b/gi, '')
-        .replace(/\b(?:by|before|on)\s+(?:next\s+\w+|this\s+\w+|tomorrow|today|\d{4}-\d{2}-\d{2}|\d{1,2}\s+\w+)\b/gi, '')
+        .replace(/\b-?\d+(?:\.\d+)?\s+(?:nos|kg|ltr|mtr|pairs?|sets?|cyl|rol|reams?|jobs?|pcs|units?)\s+(?:of\s+)?/i, '')
+        .replace(/^-?\d+(?:\.\d+)?\s+/, '')
+        .replace(/\b(?:for|at|to)\s+(?:chakan|bhosari|chk1|pun1|(?:pun|chk|mum|blr|del)\d+)(?:\s+plant)?\b/gi, '')
+        .replace(
+          /\b(?:by|before|on)\s+(?:next\s+\w+|this\s+\w+|tomorrow|today|\d{4}-\d{2}-\d{2}|\d{1,2}\s+(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)(?:\s+\d{4})?|(?:jan|january|feb|february|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)\s+\d{1,2}(?:,?\s+\d{4})?)\b/gi,
+          ''
+        )
         .replace(/\b(?:normal|emergency|urgent|routine)\s*(?:priority|urgency|request)?\b/gi, '')
-        .replace(/(?:₹|rs\.?|inr)\s*[\d,]+(?:\.\d+)?/gi, '')
+        .replace(/(?:₹|\brs\.?|\binr)\s*\d[\d,]*(?:\.\d+)?/gi, '')
         .replace(/[,.;]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
 
-      if (cleaned.length >= 2) {
+      // Reject pure numbers / symbols as item names
+      if (cleaned.length >= 2 && /[a-z]/i.test(cleaned)) {
         out.item_query = cleaned;
       }
     }

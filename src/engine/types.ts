@@ -216,6 +216,7 @@ export interface EvaluatedRequirement {
   requirement: Requirement;
   policy_version: string;
   clause_applied: string;
+  supplier_strategy: SupplierStrategy;
   decision: DecisionType;
   route: RouteType;
   supplier_id: string;

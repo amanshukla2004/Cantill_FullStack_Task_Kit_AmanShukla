@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { DatabaseSync } from 'node:sqlite';
 import { loadMasterDataSnapshot } from '../db.js';
 import { rankPreferredSuppliers } from '../../engine/preferred-suppliers.js';
+import { resolvePolicyForDate } from '../../engine/waterfall-evaluator.js';
 import { serializePreferredSuppliersCsv } from '../services/csv-utils.js';
 
 export function createSuppliersRouter(db: DatabaseSync): Router {
@@ -23,7 +24,7 @@ export function createSuppliersRouter(db: DatabaseSync): Router {
     const topN = req.query.top ? Math.max(1, Number(req.query.top)) : 3;
 
     const snap = loadMasterDataSnapshot(db);
-    const activePolicy = snap.policies.find((p) => p.status === 'ACTIVE') || snap.policies[0];
+    const activePolicy = resolvePolicyForDate(snap.policies, asOfDate);
 
     const sortedItemCodes = Array.from(snap.items.keys()).sort();
     const targetItemCodes = filterItem

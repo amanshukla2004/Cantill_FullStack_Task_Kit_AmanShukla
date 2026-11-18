@@ -17,18 +17,27 @@ const ContractLineInputSchema = z.object({
   rate: z.number().positive()
 });
 
-const CreateContractSchema = z.object({
-  contract_id: z.string().min(3),
-  supplier_id: z.string().min(2),
-  supplier_name: z.string().min(1).optional(),
-  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  value_cap: z.number().positive(),
-  initial_consumed_value: z.number().min(0).default(0),
-  source: z.enum(['REGISTER_CSV', 'SIGNED_PDF', 'MANUAL']).default('SIGNED_PDF'),
-  actor: z.string().default('Buyer'),
-  lines: z.array(ContractLineInputSchema).min(1)
-});
+const CreateContractSchema = z
+  .object({
+    contract_id: z.string().min(3),
+    supplier_id: z.string().min(2),
+    supplier_name: z.string().min(1).optional(),
+    start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    value_cap: z.number().positive(),
+    initial_consumed_value: z.number().min(0).default(0),
+    source: z.enum(['REGISTER_CSV', 'SIGNED_PDF', 'MANUAL']).default('SIGNED_PDF'),
+    actor: z.string().default('Buyer'),
+    lines: z.array(ContractLineInputSchema).min(1)
+  })
+  .refine((d) => d.end_date >= d.start_date, {
+    message: 'end_date must be on or after start_date',
+    path: ['end_date']
+  })
+  .refine((d) => d.initial_consumed_value <= d.value_cap, {
+    message: 'initial_consumed_value cannot exceed value_cap',
+    path: ['initial_consumed_value']
+  });
 
 export function createContractsRouter(db: DatabaseSync): Router {
   const router = Router();
@@ -85,6 +94,15 @@ export function createContractsRouter(db: DatabaseSync): Router {
         return;
       }
 
+      // Check PDF magic bytes (%PDF-) before attempting extraction
+      const magic = uploadedFile.buffer.subarray(0, 5).toString('ascii');
+      if (magic !== '%PDF-') {
+        res.status(400).json({
+          error: 'Invalid PDF file: uploaded file does not have a valid %PDF- header.'
+        });
+        return;
+      }
+
       const extracted = await extractContractFromPdfBuffer(uploadedFile.buffer);
       res.json({
         filename: uploadedFile.originalname,
@@ -103,7 +121,8 @@ export function createContractsRouter(db: DatabaseSync): Router {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'PDF extraction failed';
-      res.status(500).json({ error: message });
+      const isBadPdf = /invalid\s+pdf|corrupt|xref|trailer|password/i.test(message);
+      res.status(isBadPdf ? 400 : 500).json({ error: message });
     }
   });
 
