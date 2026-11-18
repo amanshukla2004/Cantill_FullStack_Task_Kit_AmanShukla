@@ -38,12 +38,17 @@ export const LeafConditionSchema = z.object({
 
 export const PolicyConditionSchema: z.ZodType<PolicyCondition> = z.lazy(() =>
   z.union([
-    LeafConditionSchema,
-    z.object({
-      all: z.array(PolicyConditionSchema).optional(),
-      any: z.array(PolicyConditionSchema).optional(),
-      not: PolicyConditionSchema.optional()
-    })
+    LeafConditionSchema.strict(),
+    z
+      .object({
+        all: z.array(PolicyConditionSchema).min(1).optional(),
+        any: z.array(PolicyConditionSchema).min(1).optional(),
+        not: PolicyConditionSchema.optional()
+      })
+      .strict()
+      .refine((c) => Boolean(c.all || c.any || c.not), {
+        message: 'Compound condition must specify at least one of all, any, or not'
+      })
   ])
 );
 

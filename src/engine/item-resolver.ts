@@ -26,7 +26,53 @@ const ABBREVIATION_MAP: Record<string, string[]> = {
   led: ['led']
 };
 
-const STOP_WORDS = new Set(['for', 'the', 'of', 'with', 'and', 'in', 'to', 'a', 'an']);
+const STOP_WORDS = new Set(['for', 'the', 'of', 'with', 'and', 'in', 'to', 'a', 'an', 'some', 'please', 'need']);
+
+const PLURAL_TO_SINGULAR: Record<string, string> = {
+  bearings: 'bearing',
+  bolts: 'bolt',
+  nuts: 'nut',
+  screws: 'screw',
+  washers: 'washer',
+  fasteners: 'fastener',
+  valves: 'valve',
+  cylinders: 'cylinder',
+  hoses: 'hose',
+  sheets: 'sheet',
+  plates: 'plate',
+  bars: 'bar',
+  angles: 'angle',
+  flats: 'flat',
+  boxes: 'box',
+  pallets: 'pallet',
+  bags: 'bag',
+  rolls: 'roll',
+  helmets: 'helmet',
+  sensors: 'sensor',
+  cables: 'cable',
+  lights: 'light',
+  drives: 'drive',
+  encoders: 'encoder',
+  laptops: 'laptop',
+  monitors: 'monitor',
+  cranes: 'crane',
+  forklifts: 'forklift',
+  seals: 'seal',
+  wheels: 'wheel',
+  electrodes: 'electrode',
+  sprockets: 'sprocket',
+  contactors: 'contactor',
+  cartridges: 'cartridge',
+  compressors: 'compressor',
+  presses: 'press',
+  kits: 'kit',
+  oils: 'oil',
+  belts: 'belt',
+  glove: 'gloves',
+  shoe: 'shoes',
+  goggle: 'goggles',
+  plug: 'plugs'
+};
 
 export function stripOperationalNoise(raw: string): {
   cleaned: string;
@@ -82,10 +128,10 @@ export function normalizeTokens(text: string): string[] {
     if (part.includes('-')) {
       const subParts = part.split('-').filter(Boolean);
       for (const sp of subParts) {
-        expanded.push(sp);
+        expanded.push(PLURAL_TO_SINGULAR[sp] || sp);
       }
     } else {
-      expanded.push(part);
+      expanded.push(PLURAL_TO_SINGULAR[part] || part);
     }
   }
 

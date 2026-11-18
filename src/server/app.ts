@@ -8,6 +8,8 @@ import { createBatchRouter } from './routes/batch.js';
 import { createSuppliersRouter } from './routes/suppliers.js';
 import { createContractsRouter } from './routes/contracts.js';
 import { createWorkspaceRouter } from './routes/workspace.js';
+import { createChatRouter } from './routes/chat.js';
+import { createPolicyRouter } from './routes/policy.js';
 
 export function createApp(db: DatabaseSync): Express {
   const app = express();
@@ -45,11 +47,13 @@ export function createApp(db: DatabaseSync): Express {
     });
   });
 
-  // Phase 2 Core Routers
+  // Phase 2 & Phase 3 Core Routers
   app.use('/api', createBatchRouter(db));
   app.use('/api', createSuppliersRouter(db));
   app.use('/api', createContractsRouter(db));
   app.use('/api', createWorkspaceRouter(db));
+  app.use('/api', createChatRouter(db));
+  app.use('/api', createPolicyRouter(db));
 
   // Serve built frontend bundle when present
   const publicDir = path.join(process.cwd(), 'dist', 'public');

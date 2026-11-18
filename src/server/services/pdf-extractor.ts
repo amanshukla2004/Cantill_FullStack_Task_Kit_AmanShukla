@@ -1,5 +1,24 @@
 import fs from 'node:fs';
+import { z } from 'zod';
 import { extractText } from 'unpdf';
+import { groqClient } from './groq-client.js';
+
+const GroqContractFallbackSchema = z.object({
+  contract_id: z.string().min(1),
+  supplier_id: z.string().min(1),
+  supplier_name: z.string().default(''),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  value_cap: z.number().positive(),
+  lines: z.array(
+    z.object({
+      item_code: z.string().min(1),
+      description: z.string().min(1),
+      uom: z.string().min(1),
+      rate: z.number().positive()
+    })
+  )
+});
 
 export interface ExtractedContractLine {
   item_code: string;
@@ -102,7 +121,30 @@ export async function extractContractFromPdfBuffer(
   buffer: Buffer
 ): Promise<ExtractedContractData> {
   const rawText = await extractPdfRawText(buffer);
-  return parseContractTextDeterministic(rawText);
+  const det = parseContractTextDeterministic(rawText);
+
+  // If deterministic parser missed key fields on an unusual PDF layout, try Groq fallback
+  const incomplete =
+    !det.contract_id || !det.supplier_id || !det.start_date || !det.end_date || det.lines.length === 0;
+
+  if (incomplete && groqClient.isConfigured() && rawText.trim().length > 20) {
+    const aiRes = await groqClient.completeJson(
+      `Extract rate contract details from this procurement contract PDF text.
+Return ONLY valid JSON:
+{ "contract_id": "RC-...", "supplier_id": "S...", "supplier_name": "...", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", "value_cap": number, "lines": [{ "item_code": "ITM-...", "description": "...", "uom": "...", "rate": number }] }`,
+      rawText.slice(0, 12000),
+      GroqContractFallbackSchema
+    );
+    if (aiRes.ok && aiRes.data) {
+      return {
+        ...aiRes.data,
+        raw_text: rawText,
+        extraction_method: 'GROQ_FALLBACK'
+      };
+    }
+  }
+
+  return det;
 }
 
 export async function extractContractFromPdfFile(
